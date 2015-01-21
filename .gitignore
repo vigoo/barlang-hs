@@ -14,3 +14,9 @@ cabal.sandbox.config
 *.prof
 *.aux
 *.hp
+.cabal-sandbox
+TAGS
+cabal.config
+cabal.sandbox.config
+dist
+test
