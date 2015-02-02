@@ -1,10 +1,11 @@
 import Prelude hiding (sequence)
 import Language.Mes.Compiler
 import Language.Mes.Language
+import Language.Mes.PrettyPrint
 
 main :: IO ()
 main = do
-  putStrLn $ compileToString $
+  putStrLn $ pprint $
            Script $ sequence [ (SDefFun "print" [ParamDef ("msg", TString)] TUnit
                                             (SRun (EStringLit "echo") [EVar "msg"]))
                              , (SDefFun "twice" [ParamDef ("f", TFun [TString] TUnit)
@@ -17,16 +18,16 @@ main = do
                                )
                              , (SDefFun "forever" [ParamDef ("action", TFun [] TUnit)] TUnit
                                         $ sequence [ SCall (EVar "action") []
-                                                   , SCall (EFunRef "forever") [EVar "action"]
+                                                   , SCall (EVar "forever") [EVar "action"]
                                                    ]
                                )
                              , (SDefFun "id" [ParamDef ("value", TString)] TString
                                         $ SReturn (EVar "value")
                                )
                              , (SVarDecl "x" $ EStringLit "alma")
-                             , (SVarDecl "y" $ EApply (EFunRef "id") [EVar "x"])
-                             , (SCall (EFunRef "print") [EVar "y"])
-                             , (SCall (EFunRef "twice") [EFunRef "print", EVar "y"])
-                             , (SDefFun "printkorte" [] TUnit $ SCall (EFunRef "print") [EStringLit "korte"])
-                             , (SCall (EFunRef "forever") [EFunRef "printkorte"])
+                             , (SVarDecl "y" $ EApply (EVar "id") [EVar "x"])
+                             , (SCall (EVar "print") [EVar "y"])
+                             , (SCall (EVar "twice") [EVar "print", EVar "y"])
+                             , (SDefFun "printkorte" [] TUnit $ SCall (EVar "print") [EStringLit "korte"])
+                             , (SCall (EVar "forever") [EVar "printkorte"])
                              ]

@@ -65,7 +65,7 @@ noAnnotation :: BashStatement -> SH.Annotated SH.Lines
 noAnnotation = SH.Annotated (SH.Lines [] [])
 
 initialContext :: Context
-initialContext = Context { ctxScope = "__"
+initialContext = Context { ctxScope = "_"
                          , ctxSymbols = Map.empty
                          , ctxSymbolTypes = Map.empty
                          , ctxLastTmp = 0
@@ -152,17 +152,15 @@ compileExpr expr =
 
       EVar sym -> do
                 r <- findSymbolM sym
+                t <- findTypeM sym
                 case r of
-                  Just asym -> return (noPrereq, SH.ReadVar (SH.VarIdent $ asId asym))
+                  Just asym ->
+                      case t of
+                        Just (TFun _ _) -> return (noPrereq, (SH.literal $ asIdString asym))
+                        _ ->  return (noPrereq, SH.ReadVar (SH.VarIdent $ asId asym))
                   Nothing -> throwError $ UndefinedSymbol sym
 
       ESysVar sym -> return (noPrereq, SH.ReadVar (SH.VarIdent ((SH.Identifier . B.fromString) sym)))
-
-      EFunRef sym -> do
-                r <- findSymbolM sym
-                case r of
-                  Just asym -> return (noPrereq, (SH.literal $ asIdString asym))
-                  Nothing -> throwError $ UndefinedSymbol sym
 
       EApply funRefExpr params -> do
                 (prereq1, funRef) <- compileExpr funRefExpr
@@ -244,13 +242,6 @@ typeCheckExpr expr =
                   Nothing -> throwError $ CannotInferType sym
 
       ESysVar _ -> return TString
-
-      EFunRef sym -> do
-                t <- findTypeM sym
-                case t of
-                  Just typ@(TFun _ _) -> return typ
-                  Just _ -> throwError $ SymbolNotBoundToFunction sym
-                  Nothing -> throwError $ UndefinedSymbol sym
 
       EApply funRefExpr params -> do
           let funName = (show funRefExpr)

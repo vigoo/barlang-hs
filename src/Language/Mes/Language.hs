@@ -10,12 +10,11 @@ data Type = TUnit
 data Expression = EStringLit String
                 | EVar SymbolName
                 | ESysVar SymbolName
-                | EFunRef SymbolName
                 | EApply Expression [Expression]
-                  deriving (Show)
+                  deriving (Show, Eq)
 
 newtype ParamDef = ParamDef (SymbolName, Type)
-    deriving (Show)
+    deriving (Show, Eq)
 
 data Statement = SVarDecl SymbolName Expression
                | SDefFun SymbolName [ParamDef] Type Statement
@@ -24,7 +23,7 @@ data Statement = SVarDecl SymbolName Expression
                | SRun Expression [Expression] -- TODO: this should be an expression returning a process value
                | SReturn Expression
                | SNoOp
-                 deriving (Show)
+                 deriving (Show, Eq)
 
 sequence :: [Statement] -> Statement
 sequence = foldl SSequence SNoOp
