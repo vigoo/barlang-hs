@@ -1,20 +1,35 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase, FlexibleInstances #-}
 
-module Language.Mes.PrettyPrint(PrettyPrint(..)) where
+module Language.Mes.PrettyPrint(PrettyPrint(..)
+                               ,escape
+                               ,escapeChar
+                               ) where
 
 import Language.Mes.Language
 
 import Code.Build
 
+escapeChar :: Char -> String
+escapeChar ch = case ch of
+  '\n' -> "\\n"
+  '\r' -> "\\r"
+  '\t' -> "\\t"
+  '"' -> "\\\""
+  '\\' -> "\\\\"
+  _ -> [ch]
+
+escape :: String -> String
+escape = concat . (map escapeChar)
+
 instance Codeable Type where
     code = \case
-             TUnit -> code "()"
+             TUnit -> code "unit"
              TString -> code "string"
              TFun types rett -> (parenthesis $ interleave ", " (codeList types)) <++> "->" <++> rett
 
 instance Codeable Expression where
     code = \case
-             EStringLit str -> surround "\"" "\"" str
+             EStringLit str -> surround "\"" "\"" (escape str)
              EVar sym -> code sym
              ESysVar sym -> "$"  <+> sym
              EApply fnExpr pExprs -> fnExpr <+> parenthesis (interleave ", " (codeList  pExprs))
@@ -37,6 +52,9 @@ class PrettyPrint a where
   pprint :: a -> String
 
 instance PrettyPrint Type where
+  pprint = showCode . code
+
+instance PrettyPrint Expression where
   pprint = showCode . code
 
 instance PrettyPrint Script where

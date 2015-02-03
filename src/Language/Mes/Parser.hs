@@ -10,8 +10,18 @@ import Text.Parsec.String
 import Language.Mes.Language
 
 -- Basic
+escapedChar :: Parser Char
+escapedChar = char '\\' >> choice [char i >> return o | (i, o) <- mapping]
+  where
+    mapping = [ ('n', '\n')
+              , ('r', '\r')
+              , ('t', '\t')
+              , ('"', '"')
+              , ('\\', '\\')
+              ]
+
 stringChar :: Parser Char
-stringChar = satisfy (\c -> c /= '"')
+stringChar = try escapedChar <|> noneOf "\""
 
 symbolStart :: Parser Char
 symbolStart = letter
@@ -41,6 +51,25 @@ seps = skipMany1 (satisfy isSeparator)
 
 seps0 :: Parser ()
 seps0 = skipMany (satisfy isSeparator)
+
+-- Types
+
+typeUnit :: Parser Type
+typeUnit = string "unit" *> pure TUnit
+
+typeString :: Parser Type
+typeString = string "string" *> pure TString
+
+typeFun :: Parser Type
+typeFun = TFun <$> typeFunParams <*> (typeFunArrow *> typeExpr)
+  where
+    typeFunParams :: Parser [Type]
+    typeFunParams = between (char '(') (char ')') (typeExpr `sepBy` ((char ',') *> seps0))
+
+    typeFunArrow = seps0 *> string "->" *> seps0
+
+typeExpr :: Parser Type
+typeExpr = choice [typeUnit, typeString, typeFun]
 
 -- Expressions
 stringLit :: Parser Expression
@@ -80,9 +109,6 @@ call = SCall <$> (variable <* seps0 <* char '(') <*> ((expression `sepBy` ((char
 paramDefs :: Parser [ParamDef]
 paramDefs = pure [] -- TODO
 
-typeExpr :: Parser Type
-typeExpr = pure TUnit -- TODO
-
 deffun :: Parser Statement
 deffun = SDefFun <$> (string "def" *> seps *> symbolName <* seps0 <* char '(' <* seps0) <*> (paramDefs <* seps0 <* char ')' <* seps0) <*> (seps0 *> char ':' *> typeExpr) <*> (pure SNoOp) -- TODO
 
@@ -102,6 +128,9 @@ parser = statements
 
 parseType :: String -> Either ParseError Type
 parseType = runParser typeExpr () "source"
+
+parseExpr :: String -> Either ParseError Expression
+parseExpr = runParser expression () "source"
 
 parseMes :: String -> Either ParseError Statement
 parseMes = runParser parser () "source"
