@@ -1,136 +1,160 @@
-{-# LANGUAGE OverloadedStrings, Rank2Types #-}
-
+{-# LANGUAGE OverloadedStrings #-}
 module Language.Mes.Parser where
 
-import Control.Applicative hiding ((<|>), many)
-import Data.Char
-import Text.Parsec
-import Text.Parsec.String
+import Control.Applicative
+import Control.Monad.IO.Class
+import qualified Data.HashSet as HashSet
+import Data.Semigroup
+import Text.Parser.Combinators
+import Text.Parser.Char
+import Text.Parser.Token
+import Text.Parser.Token.Style
+import Text.Trifecta.Delta
+import Text.Trifecta.Parser
+import Text.Trifecta.Result
+import qualified Text.PrettyPrint.ANSI.Leijen as Pretty hiding (line, (<>), (<$>), empty)
+import System.IO
 
 import Language.Mes.Language
 
--- Basic
-escapedChar :: Parser Char
-escapedChar = char '\\' >> choice [char i >> return o | (i, o) <- mapping]
+idStyle :: IdentifierStyle Parser
+idStyle = emptyIdents { _styleReserved = set [ "string"
+                                             , "unit"
+                                             , "->"
+                                             , "return"
+                                             , "val"
+                                             , "="
+                                             , ">"
+                                             , "def"
+                                             , ":"
+                                             , "end"
+                                             ]
+                      }
   where
-    mapping = [ ('n', '\n')
-              , ('r', '\r')
-              , ('t', '\t')
-              , ('"', '"')
-              , ('\\', '\\')
-              ]
+    set = HashSet.fromList
 
-stringChar :: Parser Char
-stringChar = try escapedChar <|> noneOf "\""
+identifier :: Parser String
+identifier = ident idStyle
 
-symbolStart :: Parser Char
-symbolStart = letter
-
-symbolLetter :: Parser Char
-symbolLetter = alphaNum
-
-isReserved :: SymbolName -> Bool
-isReserved "val" = True
-isReserved "return" = True
-isReserved _ = False
-
-symbolName :: Parser SymbolName
-symbolName = do sym <- symbolName'
-                if (isReserved sym)
-                then unexpected $ "reserved name: " ++ sym
-                else return sym
-    where
-      symbolName' = do x <- symbolStart
-                       xs <- many symbolLetter
-                       return (x:xs)
-                    <?> "symbol name"
-
-
-seps :: Parser ()
-seps = skipMany1 (satisfy isSeparator)
-
-seps0 :: Parser ()
-seps0 = skipMany (satisfy isSeparator)
+reserved :: String -> Parser ()
+reserved = reserve idStyle
 
 -- Types
 
 typeUnit :: Parser Type
-typeUnit = string "unit" *> pure TUnit
+typeUnit = token $ reserved "unit" >> return TUnit
 
 typeString :: Parser Type
-typeString = string "string" *> pure TString
+typeString = token $ reserved "string" >> return TString
+
+typeFunArrow :: Parser ()
+typeFunArrow = token $ reserved "->"
+
+typeFunParams :: Parser [Type]
+typeFunParams = parens $ commaSep typeExpr
 
 typeFun :: Parser Type
 typeFun = TFun <$> typeFunParams <*> (typeFunArrow *> typeExpr)
-  where
-    typeFunParams :: Parser [Type]
-    typeFunParams = between (char '(') (char ')') (typeExpr `sepBy` ((char ',') *> seps0))
-
-    typeFunArrow = seps0 *> string "->" *> seps0
 
 typeExpr :: Parser Type
-typeExpr = choice [typeUnit, typeString, typeFun]
+typeExpr = choice [ typeUnit
+                  , typeString
+                  , typeFun
+                  ]
 
 -- Expressions
 stringLit :: Parser Expression
-stringLit = EStringLit <$> (between (char '"') (char '"') (many stringChar))
+stringLit = EStringLit <$> stringLiteral
 
 variable :: Parser Expression
-variable = EVar <$> symbolName
+variable = EVar <$> identifier
 
 systemVariable :: Parser Expression
-systemVariable = ESysVar <$> (char '$' *> symbolName)
+systemVariable = ESysVar <$> (char '$' *> identifier)
 
 funApplication :: Parser Expression
-funApplication = EApply <$> (variable <* seps0 <* char '(') <*> ((expression `sepBy` ((char ',') *> seps0)) <* char ')')
+funApplication = try $ EApply <$> variable <*> paramList
+  where
+    paramList = parens $ commaSep expression
 
 expression :: Parser Expression
-expression =  stringLit
-          <|> systemVariable
-          <|> try funApplication
-          <|> variable
+expression = choice [ stringLit
+                    , funApplication
+                    , variable
+                    , systemVariable
+                    ]
 
 -- Statements
-nop :: Parser Statement
-nop = spaces *> eof *> pure SNoOp
 
-sequenceP :: Parser Statement
-sequenceP = SSequence <$> statement <*> (many1 endOfLine *> statements)
+nop :: Parser Statement
+nop = pure SNoOp
 
 ret :: Parser Statement
-ret = SReturn <$> (string "return" *> seps *> expression)
+ret = SReturn <$> (returnKeyword >> expression) <?> "return statement"
+  where
+    returnKeyword = token $ reserved "return"
 
-vardecl :: Parser Statement
-vardecl = SVarDecl <$> (string "val" *> seps *> symbolName <* seps <* char '=' <* seps) <*> expression
+val :: Parser Statement
+val = SVarDecl <$> (valKeyword *> identifier <* equals) <*> expression <?> "variable declaration"
+  where
+    valKeyword = token $ reserved "val"
+    equals = token $ reserved "="
 
 call :: Parser Statement
-call = SCall <$> (variable <* seps0 <* char '(') <*> ((expression `sepBy` ((char ',') *> seps0)) <* char ')')
+call = try $ SCall <$> (parens expression <|> variable) <*> paramList
+  where
+    paramList = parens $ commaSep expression
 
-paramDefs :: Parser [ParamDef]
-paramDefs = pure [] -- TODO
+run :: Parser Statement
+run = (token $ reserved ">") >> SRun <$> expression <*> runParams
+  where
+    runParams = many expression
 
 deffun :: Parser Statement
-deffun = SDefFun <$> (string "def" *> seps *> symbolName <* seps0 <* char '(' <* seps0) <*> (paramDefs <* seps0 <* char ')' <* seps0) <*> (seps0 *> char ':' *> typeExpr) <*> (pure SNoOp) -- TODO
-
-statements :: Parser Statement
-statements =  try sequenceP
-          <|> statement
+deffun = SDefFun <$> (defKeyword *> identifier) <*> paramDefs <*> retType <*> (collapse <$> body)
+  where
+    defKeyword = token $ reserved "def"
+    endKeyword = token $ reserved "end"
+    typSepSym = token $ reserved ":"
+    paramDef = do name <- identifier
+                  typSepSym
+                  typ <- typeExpr
+                  return $ ParamDef (name, typ)
+    paramDefs = parens $ commaSep paramDef
+    retType = typSepSym *> typeExpr
+    body = (try endKeyword >> return [])
+           <|> do x <- statement <* semi
+                  xs <- body
+                  return (x:xs)
 
 statement :: Parser Statement
-statement =  ret
-         <|> vardecl
-         <|> deffun
-         <|> call
-         <|> nop
+statement = choice [ ret
+                   , run
+                   , val
+                   , call
+                   , deffun
+                   , nop
+                   ]
 
-parser :: Parser Statement
-parser = statements
+collapse :: [Statement] -> Statement
+collapse [] = SNoOp
+collapse [s] = s
+collapse (x:xs) = SSequence x (collapse xs)
 
-parseType :: String -> Either ParseError Type
-parseType = runParser typeExpr () "source"
+statements :: Parser Statement
+statements = collapse <$> statement `endBy` semi
 
-parseExpr :: String -> Either ParseError Expression
-parseExpr = runParser expression () "source"
+showParseError :: (MonadIO m) => Pretty.Doc -> m ()
+showParseError xs = liftIO $ Pretty.displayIO stdout $ Pretty.renderPretty 0.8 80 $ xs <> Pretty.linebreak
 
-parseMes :: String -> Either ParseError Statement
-parseMes = runParser parser () "source"
+parse :: Parser a -> String -> Result a
+parse p src = parseString p (Columns 0 0) src
+
+parseType :: String -> Result Type
+parseType = parse typeExpr
+
+parseExpr :: String -> Result Expression
+parseExpr = parse expression
+
+parseMes :: String -> Result Statement
+parseMes = parse statements

@@ -1,6 +1,7 @@
 import Prelude hiding (sequence)
 import Language.Mes.Compiler
 import Language.Mes.Language
+import Language.Mes.Parser
 import Language.Mes.PrettyPrint
 
 main :: IO ()

@@ -38,8 +38,13 @@ library
                      , code-builder
                      , containers
                      , mtl
-                     , parsec
+                     , parsers
+                     , trifecta
                      , utf8-string
+                     , ansi-wl-pprint
+                     , semigroups
+                     , transformers
+                     , unordered-containers
 
                      , QuickCheck ==2.*
                      , HUnit
@@ -63,6 +68,14 @@ executable mes
                      , containers
                      , mtl
                      , utf8-string
+                     , parsers
+                     , trifecta
+                     , utf8-string
+                     , ansi-wl-pprint
+                     , semigroups
+                     , transformers
+                     , unordered-containers
+                     , code-builder
 
                      , mes
   
@@ -76,7 +89,13 @@ test-suite mes-test
   build-depends:       base >=4.7 && <4.8
                      , QuickCheck ==2.*
                      , HUnit
-                     , parsec
+                     , parsers
+                     , trifecta
+                     , utf8-string
+                     , ansi-wl-pprint
+                     , semigroups
+                     , transformers
+                     , unordered-containers
                      , code-builder
                      , mes
 

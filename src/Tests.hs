@@ -7,6 +7,8 @@ import Test.QuickCheck
 import Test.QuickCheck.Property
 import Test.QuickCheck.Test
 
+import qualified Text.Trifecta.Result as Tr
+
 import Language.Mes.Language
 import Language.Mes.Parser
 import Language.Mes.PrettyPrint
@@ -14,6 +16,9 @@ import Language.Mes.PrettyPrint
 -- Arbitrary instances
 arbitrarySymbolName :: Gen SymbolName
 arbitrarySymbolName = listOf1 (arbitrary `suchThat` (\c -> isAscii c && isAlpha c))
+
+arbitraryStringLiteral :: Gen SymbolName
+arbitraryStringLiteral = listOf $ arbitrary `suchThat` (\c -> isAscii c && (isAlpha c || c == ' ')) -- TODO
 
 instance Arbitrary Type where
   arbitrary = sized arbType
@@ -36,11 +41,11 @@ instance Arbitrary Expression where
   arbitrary = sized arbExpr
     where
       arbExpr :: Int -> Gen Expression
-      arbExpr 0 = oneof [ EStringLit <$> (listOf $ arbitrary `suchThat` (not . ((flip elem) "\"\n")))
+      arbExpr 0 = oneof [ EStringLit <$> arbitraryStringLiteral
                         , EVar <$> arbitrarySymbolName
                         , ESysVar <$> arbitrarySymbolName
                         ]
-      arbExpr n = oneof [ EStringLit <$> arbitrary
+      arbExpr n = oneof [ EStringLit <$> arbitraryStringLiteral
                         , EVar <$> arbitrarySymbolName
                         , ESysVar <$> arbitrarySymbolName
                         , do k <- choose (0, n-1)
@@ -67,14 +72,20 @@ instance Arbitrary Statement where
 
 printedTypeIsParsable :: Type -> Property
 printedTypeIsParsable t = counterexample (pprint t) $ case parseType (pprint t) of
-                           Right t' -> t === t'
-                           Left err -> error $ "Failed: " ++ show err
+                           Tr.Success t' -> t === t'
+                           Tr.Failure err -> error $ "Failed: " ++ show err
 
 printedExpressionIsParsable :: Expression -> Property
 printedExpressionIsParsable e = counterexample (pprint e) $
                                   case parseExpr (pprint e) of
-                                    Right e' -> e === e'
-                                    Left err -> error $ "Failed: " ++ show err
+                                    Tr.Success e' -> e === e'
+                                    Tr.Failure err -> error $ "Failed: " ++ show err
+
+printedStatementIsParsable :: Statement -> Property
+printedStatementIsParsable s = counterexample (pprint s) $
+                                 case parseMes (pprint s) of
+                                   Tr.Success s' -> s === s'
+                                   Tr.Failure err -> error $ "Failed: " ++ show err
 
 check :: Testable prop => prop -> IO ()
 check prop = do
@@ -93,3 +104,4 @@ main = do
   putStrLn "Running checks..."
   check printedTypeIsParsable
   check printedExpressionIsParsable
+  check printedStatementIsParsable

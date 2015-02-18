@@ -21,6 +21,11 @@ escapeChar ch = case ch of
 escape :: String -> String
 escape = concat . (map escapeChar)
 
+parensIfNotVar :: Expression -> Code
+parensIfNotVar expr = case expr of
+  EVar _ -> code expr
+  _ -> parenthesis (code expr)
+
 instance Codeable Type where
     code = \case
              TUnit -> code "unit"
@@ -39,12 +44,12 @@ instance Codeable ParamDef where
 
 instance Codeable Statement where
     code = \case
-             SVarDecl sym expr ->  "val" <++> sym <++> "=" <++> expr
-             SDefFun sym pdefs rett body -> ("def" <++> sym <+> parenthesis (interleave ", " (codeList pdefs)) <+> ":" <++> rett) <-> indent 4 body <-> "end"
+             SVarDecl sym expr ->  "val" <++> sym <++> "=" <++> expr <+> ";"
+             SDefFun sym pdefs rett body -> ("def" <++> sym <+> parenthesis (interleave ", " (codeList pdefs)) <+> ":" <++> rett) <-> indent 4 body <-> "end;"
              SSequence s1 s2 -> s1 <-> s2
-             SCall fnExpr pExprs -> fnExpr <++> parenthesis (interleave ", " (codeList pExprs))
-             SRun runExpr pExprs -> "`" <+> runExpr <++> (interleave " " (codeList pExprs)) <+> "`"
-             SReturn expr -> "return" <++> expr
+             SCall fnExpr pExprs -> (parensIfNotVar fnExpr) <++> parenthesis (interleave ", " (codeList pExprs)) <+> ";"
+             SRun runExpr pExprs -> "> " <+> runExpr <++> (interleave " " (codeList pExprs)) <+> ";"
+             SReturn expr -> "return" <++> expr <+> ";"
              SNoOp -> noCode
 
 
@@ -55,6 +60,9 @@ instance PrettyPrint Type where
   pprint = showCode . code
 
 instance PrettyPrint Expression where
+  pprint = showCode . code
+
+instance PrettyPrint Statement where
   pprint = showCode . code
 
 instance PrettyPrint Script where
