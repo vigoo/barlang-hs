@@ -3,7 +3,9 @@
 import Prelude hiding (sequence)
 
 import Control.Applicative
+import Control.Monad
 import Options.Applicative hiding (Success, Failure)
+import System.Directory
 import Text.Trifecta.Result
 
 import Language.Mes.Compiler
@@ -12,12 +14,24 @@ import Language.Mes.Parser
 import Language.Mes.PrettyPrint
 
 data Parameters = Parameters { pSource :: FilePath
+                             , pTarget :: Maybe FilePath
+                             , pDumpAST :: Bool
                              }
 
 
 parameters :: Parser Parameters
 parameters = Parameters
              <$> strArgument (metavar "MES")
+             <*> (optional $ strOption
+                  ( long "output"
+                 <> short 'o'
+                 <> metavar "BASH"
+                 <> help "Target path for the generated bash script"
+                 ))
+             <*> switch
+                 ( long "dump-ast"
+                <> help "If set, the AST is dumped to stdout"
+                 )
 
 withParameters :: (Parameters -> IO ()) -> IO ()
 withParameters fn = execParser opts >>= fn
@@ -35,7 +49,15 @@ run Parameters{..} = do
    Failure xs -> showParseError xs
    Success mes -> do
      let bash = compileToString mes
-     putStrLn bash
+
+     when pDumpAST $ putStrLn (show mes)
+
+     case pTarget of
+      Nothing -> putStrLn bash
+      Just path -> do
+        writeFile path bash
+        p <- getPermissions path
+        setPermissions path p { executable = True }
 
 main :: IO ()
 main = withParameters run

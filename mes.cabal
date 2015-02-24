@@ -66,6 +66,7 @@ executable mes
                      , bytestring
                      , code-builder
                      , containers
+                     , directory
                      , mtl
                      , utf8-string
                      , parsers

@@ -49,3 +49,4 @@ sequence :: [Statement] -> Statement
 sequence = foldl SSequence SNoOp
 
 data Script = Script { sStatement :: Statement }
+            deriving Show

@@ -25,8 +25,8 @@ data CompilerError = InvalidFunctionContext
                    | SymbolAlreadyDefined SymbolName
                    | CannotInferType SymbolName
                    | SymbolNotBoundToFunction SymbolName
-                   | InvalidParameterTypes SymbolName [Type] [Type]
-                   | InvalidReturnType SymbolName Type Type
+                   | InvalidParameterTypes SymbolName [Type] [ExtendedType]
+                   | InvalidReturnType SymbolName Type ExtendedType
                    | InvalidParametersForRunStatement
                      deriving (Show)
 
@@ -38,9 +38,31 @@ data AssignedSymbol = AssignedSymbol { asName :: SymbolName
                                      }
                     deriving (Show)
 
+data ExtendedType = SimpleType Type
+                  | TFunRef [Type] Type
+                  deriving (Show)
+
+class TypeEq a where
+  typeEq :: a -> a -> Bool
+
+instance TypeEq Type where
+  typeEq = (==)
+
+instance TypeEq ExtendedType where
+  typeEq (SimpleType t1) (SimpleType t2) = t1 `typeEq` t2
+  typeEq (SimpleType (TFun ps1 t1)) (TFunRef ps2 t2) = ps1 `typeEq` ps2 && t1 `typeEq` t2
+  typeEq (TFunRef ps1 t1) (SimpleType (TFun ps2 t2)) = ps1 `typeEq` ps2 && t1 `typeEq` t2
+  typeEq (TFunRef ps1 t1) (TFunRef ps2 t2) = ps1 `typeEq` ps2 && t1 `typeEq` t2
+
+instance (TypeEq a) => TypeEq [a] where
+  typeEq [] [] = True
+  typeEq (x:xs) [] = False
+  typeEq [] (y:ys) = False
+  typeEq (x:xs) (y:ys) = x `typeEq` y && xs `typeEq` ys
+
 data Context = Context { ctxScope :: Scope
                        , ctxSymbols :: Map.Map SymbolName AssignedSymbol
-                       , ctxSymbolTypes :: Map.Map SymbolName Type
+                       , ctxSymbolTypes :: Map.Map SymbolName ExtendedType
                        , ctxLastTmp :: Int
                        }
              deriving (Show)
@@ -96,10 +118,10 @@ createIdentifierM sym = do
   put ctx'
   return asym
 
-storeType :: Context -> SymbolName -> Type -> Context
+storeType :: Context -> SymbolName -> ExtendedType -> Context
 storeType ctx@Context{..} sym typ = ctx { ctxSymbolTypes = Map.insert sym typ ctxSymbolTypes }
 
-storeTypeM :: SymbolName -> Type -> CompilerMonad ()
+storeTypeM :: SymbolName -> ExtendedType -> CompilerMonad ()
 storeTypeM sym typ = modify (\ctx -> storeType ctx sym typ)
 
 findSymbol :: Context -> SymbolName -> Maybe AssignedSymbol
@@ -108,10 +130,10 @@ findSymbol Context{..} sym = Map.lookup sym ctxSymbols
 findSymbolM :: SymbolName -> CompilerMonad (Maybe AssignedSymbol)
 findSymbolM sym = gets $ \ctx -> findSymbol ctx sym
 
-findType :: Context -> SymbolName -> Maybe Type
+findType :: Context -> SymbolName -> Maybe ExtendedType
 findType Context{..} sym = Map.lookup sym ctxSymbolTypes
 
-findTypeM :: SymbolName -> CompilerMonad (Maybe Type)
+findTypeM :: SymbolName -> CompilerMonad (Maybe ExtendedType)
 findTypeM sym = gets $ \ctx -> findType ctx sym
 
 generateTmpSym :: CompilerMonad AssignedSymbol
@@ -156,7 +178,7 @@ compileExpr expr =
                 case r of
                   Just asym ->
                       case t of
-                        Just (TFun _ _) -> return (noPrereq, (SH.literal $ asIdString asym))
+                        Just (SimpleType (TFun _ _)) -> return (noPrereq, (SH.literal $ asIdString asym))
                         _ ->  return (noPrereq, SH.ReadVar (SH.VarIdent $ asId asym))
                   Nothing -> throwError $ UndefinedSymbol sym
 
@@ -230,10 +252,10 @@ compileSt st =
               withPrereqs prereqs $ SH.SimpleCommand cProgram cParams
 
 
-typeCheckExpr :: Expression -> CompilerMonad Type
+typeCheckExpr :: Expression -> CompilerMonad ExtendedType
 typeCheckExpr expr =
     case expr of
-      EStringLit _ -> return TString
+      EStringLit _ -> return $ SimpleType TString
 
       EVar sym -> do
                 t <- findTypeM sym
@@ -241,19 +263,25 @@ typeCheckExpr expr =
                   Just typ -> return typ
                   Nothing -> throwError $ CannotInferType sym
 
-      ESysVar _ -> return TString
+      ESysVar _ -> return $ SimpleType TString
 
       EApply funRefExpr params -> do
           let funName = (show funRefExpr)
           paramTypes <- mapM typeCheckExpr params
           fnType <- typeCheckExpr funRefExpr
           case fnType of
-            TFun expectedTypes retType | expectedTypes == paramTypes -> return retType
-                                       | otherwise -> throwError $ InvalidParameterTypes funName expectedTypes paramTypes
+            SimpleType (TFun expectedTypes retType) | (map SimpleType expectedTypes) `typeEq` paramTypes -> return $ SimpleType retType
+                                                    | otherwise -> throwError $ InvalidParameterTypes funName expectedTypes paramTypes
+            TFunRef expectedTypes retType | (map SimpleType expectedTypes) `typeEq` paramTypes -> return $ SimpleType retType
+                                          | otherwise -> throwError $ InvalidParameterTypes funName expectedTypes paramTypes
             _ -> throwError $ SymbolNotBoundToFunction funName
 
 funType :: [ParamDef] -> Type -> Type
 funType params rettype = TFun (map (\case { ParamDef (_, t) -> t }) params) rettype
+
+funToFunRef :: Type -> ExtendedType
+funToFunRef (TFun ps t) = TFunRef ps t
+funToFunRef t = SimpleType t
 
 funScope :: Scope -> SymbolName -> Scope
 funScope = (++)
@@ -263,27 +291,27 @@ funContext ctx@Context{..} name params = paramCtx { ctxSymbolTypes = ctxSymbolTy
     where
       scope = funScope ctxScope name
       paramCtx = foldl (\c pd -> let ParamDef (n, _) = pd in fst $ createIdentifier c n) (ctx { ctxScope = scope }) params
-      paramSymbolTypes = foldl (\m pd -> let ParamDef (n, t) = pd in Map.insert n t m) Map.empty params
+      paramSymbolTypes = foldl (\m pd -> let ParamDef (n, t) = pd in Map.insert n (funToFunRef t) m) Map.empty params
 
 funContextM :: SymbolName -> [ParamDef] -> CompilerMonad Context
 funContextM name params = gets $ \ctx -> funContext ctx name params
 
-typeCheckSt :: Statement -> CompilerMonad Type
+typeCheckSt :: Statement -> CompilerMonad ExtendedType
 typeCheckSt st =
     case st of
-      SNoOp -> return TUnit
+      SNoOp -> return $ SimpleType TUnit
 
       SVarDecl sym expr -> do
           (!typ) <- typeCheckExpr expr
           storeTypeM sym typ
-          return TUnit
+          return $ SimpleType TUnit
 
       SDefFun sym pdef rettype stIn -> do
-          storeTypeM sym (funType pdef rettype)
+          storeTypeM sym (SimpleType $ funType pdef rettype)
           funCtx <- funContextM sym pdef
           (!sttype) <- runChildContext funCtx $ typeCheckSt stIn
-          if sttype == rettype
-          then return TUnit
+          if sttype `typeEq` (SimpleType rettype)
+          then return $ SimpleType TUnit
           else throwError $ InvalidReturnType sym rettype sttype
 
       SSequence s1 s2 -> typeCheckSt s1 >> typeCheckSt s2
@@ -299,6 +327,6 @@ typeCheckSt st =
       SRun program params -> do
           (!typProgram) <- typeCheckExpr program
           typParams <- mapM typeCheckExpr params
-          if (typProgram == TString) && all (\t -> t == TString) typParams
-          then return  TUnit -- TODO
+          if (typProgram `typeEq` (SimpleType TString)) && all (\t -> t `typeEq` (SimpleType TString)) typParams
+          then return $ SimpleType TUnit -- TODO
           else throwError InvalidParametersForRunStatement
