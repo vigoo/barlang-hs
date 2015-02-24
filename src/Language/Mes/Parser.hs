@@ -1,5 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Language.Mes.Parser where
+module Language.Mes.Parser ( parseType
+                           , parseExpr
+                           , parseMes
+                           , parseMesFile
+                           , showParseError
+                           ) where
 
 import Control.Applicative
 import Control.Monad.IO.Class
@@ -156,5 +161,8 @@ parseType = parse typeExpr
 parseExpr :: String -> Result Expression
 parseExpr = parse expression
 
-parseMes :: String -> Result Statement
-parseMes = parse statements
+parseMes :: String -> Result Script
+parseMes = parse (Script <$> statements)
+
+parseMesFile :: FilePath -> IO (Result Script)
+parseMesFile = parseFromFileEx (Script <$> statements)

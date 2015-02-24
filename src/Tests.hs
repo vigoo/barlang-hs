@@ -84,7 +84,7 @@ printedExpressionIsParsable e = counterexample (pprint e) $
 printedStatementIsParsable :: Statement -> Property
 printedStatementIsParsable s = counterexample (pprint s) $
                                  case parseMes (pprint s) of
-                                   Tr.Success s' -> s === s'
+                                   Tr.Success s' -> s === (sStatement s')
                                    Tr.Failure err -> error $ "Failed: " ++ show err
 
 check :: Testable prop => prop -> IO ()
