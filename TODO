@@ -1,7 +1,14 @@
 - Command line arguments, compile & pprint
 - Bool, int, double
+- Auto inline
 - If
-- Closure?
-- Process 
+- Closure
+- Process
+- Arrays, command line args
 - Loop
 - Encode/decode mes source to bash as comment
+- Traps
+- Import
+- Integration test framework
+- Type alias (for example double represented as string, wrappers around bc, etc.)
+- Regexp
