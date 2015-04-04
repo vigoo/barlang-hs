@@ -9,13 +9,13 @@ import System.Directory
 import Text.Trifecta.Result
 
 import Language.Mes.Compiler
-import Language.Mes.Language
 import Language.Mes.Parser
 import Language.Mes.PrettyPrint
 
 data Parameters = Parameters { pSource :: FilePath
                              , pTarget :: Maybe FilePath
                              , pDumpAST :: Bool
+                             , pPPrintOnly :: Bool
                              }
 
 
@@ -31,6 +31,10 @@ parameters = Parameters
              <*> switch
                  ( long "dump-ast"
                 <> help "If set, the AST is dumped to stdout"
+                 )
+             <*> switch
+                 ( long "pretty-print"
+                <> help "If set, the MES source is pretty printed to stdout, no compilation made"
                  )
 
 withParameters :: (Parameters -> IO ()) -> IO ()
@@ -48,16 +52,19 @@ run Parameters{..} = do
   case result of
    Failure xs -> showParseError xs
    Success mes -> do
-     let bash = compileToString mes
+     case pPPrintOnly of
+      True -> putStrLn $ pprint mes
+      False -> do
+        let bash = compileToString mes
 
-     when pDumpAST $ putStrLn (show mes)
+        when pDumpAST $ putStrLn (show mes)
 
-     case pTarget of
-      Nothing -> putStrLn bash
-      Just path -> do
-        writeFile path bash
-        p <- getPermissions path
-        setPermissions path p { executable = True }
+        case pTarget of
+         Nothing -> putStrLn bash
+         Just path -> do
+           writeFile path bash
+           p <- getPermissions path
+           setPermissions path p { executable = True }
 
 main :: IO ()
 main = withParameters run

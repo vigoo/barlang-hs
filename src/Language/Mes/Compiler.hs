@@ -9,9 +9,11 @@ import qualified Data.ByteString.Lazy.UTF8 as BL
 import Data.Binary.Builder
 import qualified Data.Map as Map
 import Data.Maybe
+import Data.Monoid
 import qualified Language.Bash as SH
 import qualified Language.Bash.Annotations as SH
 import qualified Language.Bash.Syntax as SH
+import qualified Language.Bash.PrettyPrinter as SHPP
 import Language.Mes.Language
 import Text.Printf
 
@@ -28,6 +30,7 @@ data CompilerError = InvalidFunctionContext
                    | InvalidParameterTypes SymbolName [Type] [ExtendedType]
                    | InvalidReturnType SymbolName Type ExtendedType
                    | InvalidParametersForRunStatement
+                   | InvalidBooleanExpression
                      deriving (Show)
 
 type CompilerMonad = ExceptT CompilerError (State Context)
@@ -53,11 +56,12 @@ instance TypeEq ExtendedType where
   typeEq (SimpleType (TFun ps1 t1)) (TFunRef ps2 t2) = ps1 `typeEq` ps2 && t1 `typeEq` t2
   typeEq (TFunRef ps1 t1) (SimpleType (TFun ps2 t2)) = ps1 `typeEq` ps2 && t1 `typeEq` t2
   typeEq (TFunRef ps1 t1) (TFunRef ps2 t2) = ps1 `typeEq` ps2 && t1 `typeEq` t2
+  typeEq _ _ = False
 
 instance (TypeEq a) => TypeEq [a] where
   typeEq [] [] = True
-  typeEq (x:xs) [] = False
-  typeEq [] (y:ys) = False
+  typeEq (_:_) [] = False
+  typeEq [] (_:_) = False
   typeEq (x:xs) (y:ys) = x `typeEq` y && xs `typeEq` ys
 
 data Context = Context { ctxScope :: Scope
@@ -67,10 +71,21 @@ data Context = Context { ctxScope :: Scope
                        }
              deriving (Show)
 
+setSafe' :: SH.Statement t
+setSafe' = SH.SimpleCommand "set" [ "-o", "nounset"
+                                  , "-o", "pipefail"
+                                  ]
+
+toBash :: (SHPP.Annotation t) => SH.Statement t -> Builder
+toBash st = mconcat [ fromByteString "#!/bin/bash\n"
+                    , SHPP.builder (setSafe' :: SH.Statement ())
+                    , fromByteString "\n\n"
+                    , SHPP.builder st ]
+
 compileToString :: Script -> String
 compileToString script =
     case (evalState (runExceptT $ compile script) initialContext) of
-      Right st -> BL.toString $ toLazyByteString $ SH.script st
+      Right st -> BL.toString $ toLazyByteString $ toBash st
       Left err -> error (show err)
 
 compile :: Script -> CompilerMonad BashStatement
@@ -167,10 +182,41 @@ withPrereqs prereqs st = do
 noPrereq :: CompilerMonad BashStatement
 noPrereq = return SH.Empty
 
+compileBoolExpr :: Expression -> CompilerMonad B.ByteString
+compileBoolExpr = \case
+  EBoolLit True -> return "true"
+  EBoolLit False -> return "false"
+  EVar sym -> do
+    r <- findSymbolM sym
+    case r of
+     Just asym ->
+       return $ "$(exit $" <> asIdString asym <> ")"
+     Nothing ->
+       throwError $ UndefinedSymbol sym
+  EAnd a b -> do
+    e1 <- compileBoolExpr a
+    e2 <- compileBoolExpr b
+    return $ e1 <> " && " <> e2
+  EOr a b -> do
+    e1 <- compileBoolExpr a
+    e2 <- compileBoolExpr b
+    return $ e1 <> " || " <> e2
+  _ -> throwError InvalidBooleanExpression
+
+boolTempVar :: Expression -> CompilerMonad (AssignedSymbol, CompilerMonad BashStatement)
+boolTempVar expr = do
+  boolExpr <- compileBoolExpr expr
+  tmpSym <- generateTmpSym
+  let assign = SH.Assign (SH.Var (asId tmpSym) (SH.ReadVar $ SH.VarSpecial SH.DollarQuestion))
+  return (tmpSym, return $ SH.Sequence (SH.Annotated (SH.Lines [boolExpr] []) assign) (noAnnotation SH.Empty))
+
 compileExpr :: Expression -> CompilerMonad (CompilerMonad BashStatement, BashExpression)
 compileExpr expr =
     case expr of
       EStringLit str -> return (noPrereq, (SH.literal . B.fromString) str)
+
+      EBoolLit False -> return (noPrereq, (SH.literal "1"))
+      EBoolLit True -> return (noPrereq, (SH.literal "0"))
 
       EVar sym -> do
                 r <- findSymbolM sym
@@ -192,6 +238,10 @@ compileExpr expr =
                                                           (noAnnotation $ SH.Assign $ SH.Var (asId tmpSym) (SH.literal ""))
                                                           (noAnnotation $ SH.SimpleCommand funRef $ (SH.literal (asIdString tmpSym)):cParams)
                 return (finalPrereqs, SH.ReadVar (SH.VarIdent $ asId tmpSym))
+
+      EAnd _ _ -> do
+        (tmpSym, prereq) <- boolTempVar expr
+        return (prereq, SH.ReadVar (SH.VarIdent $ asId tmpSym))
 
 seqCompileExpr :: (CompilerMonad BashStatement) -> [Expression] -> CompilerMonad (CompilerMonad BashStatement, [BashExpression])
 seqCompileExpr p e = seqCompileExpr' p e []
@@ -257,6 +307,8 @@ typeCheckExpr expr =
     case expr of
       EStringLit _ -> return $ SimpleType TString
 
+      EBoolLit _ -> return $ SimpleType TBool
+
       EVar sym -> do
                 t <- findTypeM sym
                 case t of
@@ -275,6 +327,13 @@ typeCheckExpr expr =
             TFunRef expectedTypes retType | (map SimpleType expectedTypes) `typeEq` paramTypes -> return $ SimpleType retType
                                           | otherwise -> throwError $ InvalidParameterTypes funName expectedTypes paramTypes
             _ -> throwError $ SymbolNotBoundToFunction funName
+
+      EAnd e1 e2 -> do
+        t1 <- typeCheckExpr e1
+        t2 <- typeCheckExpr e2
+        case (t1, t2) of
+         (SimpleType TBool, SimpleType TBool) -> return $ SimpleType TBool
+         _ -> throwError $ InvalidBooleanExpression
 
 funType :: [ParamDef] -> Type -> Type
 funType params rettype = TFun (map (\case { ParamDef (_, t) -> t }) params) rettype

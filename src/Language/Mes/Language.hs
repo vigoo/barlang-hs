@@ -4,13 +4,17 @@ type SymbolName = String
 
 data Type = TUnit
           | TString
+          | TBool
           | TFun [Type] Type
           deriving (Show, Eq)
 
 data Expression = EStringLit String
+                | EBoolLit Bool
                 | EVar SymbolName
                 | ESysVar SymbolName
                 | EApply Expression [Expression]
+                | EAnd Expression Expression
+                | EOr Expression Expression
                   deriving (Show, Eq)
 
 newtype ParamDef = ParamDef (SymbolName, Type)

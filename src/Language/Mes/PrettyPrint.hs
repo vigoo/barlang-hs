@@ -30,14 +30,19 @@ instance Codeable Type where
     code = \case
              TUnit -> code "unit"
              TString -> code "string"
+             TBool -> code "bool"
              TFun types rett -> (parenthesis $ interleave ", " (codeList types)) <++> "->" <++> rett
 
 instance Codeable Expression where
     code = \case
              EStringLit str -> surround "\"" "\"" (escape str)
+             EBoolLit True -> code "true"
+             EBoolLit False -> code "false"
              EVar sym -> code sym
              ESysVar sym -> "$"  <+> sym
-             EApply fnExpr pExprs -> fnExpr <+> parenthesis (interleave ", " (codeList  pExprs))
+             EApply fnExpr pExprs -> parenthesis $ fnExpr <+> parenthesis (interleave ", " (codeList  pExprs))
+             EAnd a b -> parenthesis $ (parenthesis $ code a) <++> "and" <++> (parenthesis $ code b)
+             EOr a b -> parenthesis $ (parenthesis $ code a) <++> "or" <++> (parenthesis $ code b)
 
 instance Codeable ParamDef where
     code (ParamDef (name, typ)) = name <+> ": " <+> typ

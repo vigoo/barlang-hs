@@ -12,6 +12,7 @@ import qualified Data.HashSet as HashSet
 import Data.Semigroup
 import Text.Parser.Combinators
 import Text.Parser.Char
+import Text.Parser.Expression
 import Text.Parser.Token
 import Text.Parser.Token.Style
 import Text.Trifecta.Delta
@@ -24,6 +25,7 @@ import Language.Mes.Language
 
 idStyle :: IdentifierStyle Parser
 idStyle = emptyIdents { _styleReserved = set [ "string"
+                                             , "bool"
                                              , "unit"
                                              , "->"
                                              , "return"
@@ -33,6 +35,10 @@ idStyle = emptyIdents { _styleReserved = set [ "string"
                                              , "def"
                                              , ":"
                                              , "end"
+                                             , "true"
+                                             , "false"
+                                             , "and"
+                                             , "or"
                                              ]
                       }
   where
@@ -52,6 +58,9 @@ typeUnit = token $ reserved "unit" >> return TUnit
 typeString :: Parser Type
 typeString = token $ reserved "string" >> return TString
 
+typeBool :: Parser Type
+typeBool = token $ reserved "bool" >> return TBool
+
 typeFunArrow :: Parser ()
 typeFunArrow = token $ reserved "->"
 
@@ -64,12 +73,19 @@ typeFun = TFun <$> typeFunParams <*> (typeFunArrow *> typeExpr)
 typeExpr :: Parser Type
 typeExpr = choice [ typeUnit
                   , typeString
+                  , typeBool
                   , typeFun
                   ]
 
 -- Expressions
 stringLit :: Parser Expression
 stringLit = EStringLit <$> stringLiteral
+
+boolLit :: Parser Expression
+boolLit = EBoolLit <$> (true <|> false)
+  where
+    true = token $ reserved "true" >> return True
+    false = token $ reserved "false" >> return False
 
 variable :: Parser Expression
 variable = EVar <$> identifier
@@ -80,14 +96,23 @@ systemVariable = ESysVar <$> (char '$' *> identifier)
 funApplication :: Parser Expression
 funApplication = try $ EApply <$> variable <*> paramList
   where
-    paramList = parens $ commaSep expression
+    paramList = parens $ commaSep (expression False)
 
-expression :: Parser Expression
-expression = choice [ stringLit
-                    , funApplication
-                    , variable
-                    , systemVariable
-                    ]
+term :: Bool -> Parser Expression
+term parfun = parens (expression False)
+        <|> stringLit
+        <|> boolLit
+        <|> (if parfun then parens funApplication else funApplication)
+        <|> variable
+        <|> systemVariable
+
+exprTable :: [[Operator Parser Expression]]
+exprTable = [ [Infix (pure EAnd <* token (reserved "and")) AssocLeft ]
+            , [Infix (pure EOr <* token (reserved "or")) AssocLeft ]
+            ]
+
+expression :: Bool -> Parser Expression
+expression parfun = buildExpressionParser exprTable (term parfun)
 
 -- Statements
 
@@ -95,25 +120,25 @@ nop :: Parser Statement
 nop = pure SNoOp
 
 ret :: Parser Statement
-ret = SReturn <$> (returnKeyword >> expression) <?> "return statement"
+ret = SReturn <$> (returnKeyword >> expression False) <?> "return statement"
   where
     returnKeyword = token $ reserved "return"
 
 val :: Parser Statement
-val = SVarDecl <$> (valKeyword *> identifier <* equals) <*> expression <?> "variable declaration"
+val = SVarDecl <$> (valKeyword *> identifier <* equals) <*> expression False <?> "variable declaration"
   where
     valKeyword = token $ reserved "val"
     equals = token $ reserved "="
 
 call :: Parser Statement
-call = try $ SCall <$> (parens expression <|> variable) <*> paramList
+call = try $ SCall <$> (expression True <|> variable) <*> paramList
   where
-    paramList = parens $ commaSep expression
+    paramList = parens $ commaSep (expression False)
 
 run :: Parser Statement
-run = (token $ reserved ">") >> SRun <$> expression <*> runParams
+run = (token $ reserved ">") >> SRun <$> expression True <*> runParams
   where
-    runParams = many expression
+    runParams = many $ expression True
 
 deffun :: Parser Statement
 deffun = SDefFun <$> (defKeyword *> identifier) <*> paramDefs <*> retType <*> (collapse <$> body)
@@ -159,7 +184,7 @@ parseType :: String -> Result Type
 parseType = parse typeExpr
 
 parseExpr :: String -> Result Expression
-parseExpr = parse expression
+parseExpr = parse $ expression False
 
 parseMes :: String -> Result Script
 parseMes = parse (Script <$> statements)
