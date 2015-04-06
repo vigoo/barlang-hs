@@ -31,6 +31,8 @@ data CompilerError = InvalidFunctionContext
                    | InvalidReturnType SymbolName Type ExtendedType
                    | InvalidParametersForRunStatement
                    | InvalidBooleanExpression
+                   | InvalidTypesInNumericExpression [ExtendedType]
+                   | EqualityUsedOnNonEqualTypes [ExtendedType]
                      deriving (Show)
 
 type CompilerMonad = ExceptT CompilerError (State Context)
@@ -182,6 +184,30 @@ withPrereqs prereqs st = do
 noPrereq :: CompilerMonad BashStatement
 noPrereq = return SH.Empty
 
+compileTestExpr :: Expression -> CompilerMonad B.ByteString
+compileTestExpr = \case
+  EBoolLit True -> return "TRUE"
+  EBoolLit False -> return "\"\""
+  EVar sym -> do
+    r <- findSymbolM sym
+    case r of
+     Just asym ->
+       return $ "( \"$" <> asIdString asym <> "\" = \"0\" )"
+     Nothing ->
+       throwError $ UndefinedSymbol sym
+  EAnd a b -> do
+    e1 <- compileTestExpr a
+    e2 <- compileTestExpr b
+    return $ e1 <> " && " <> e2
+  EOr a b -> do
+    e1 <- compileTestExpr a
+    e2 <- compileTestExpr b
+    return $ e1 <> " || " <> e2
+  ENot e -> do
+    e' <- compileTestExpr e
+    return $ "! " <> e'
+  _ -> throwError InvalidBooleanExpression
+
 compileBoolExpr :: Expression -> CompilerMonad B.ByteString
 compileBoolExpr = \case
   EBoolLit True -> return "true"
@@ -201,6 +227,9 @@ compileBoolExpr = \case
     e1 <- compileBoolExpr a
     e2 <- compileBoolExpr b
     return $ e1 <> " || " <> e2
+  ENot e -> do
+    e' <- compileTestExpr (ENot e)
+    return $ "[[ " <> e' <> " ]]"
   _ -> throwError InvalidBooleanExpression
 
 boolTempVar :: Expression -> CompilerMonad (AssignedSymbol, CompilerMonad BashStatement)
@@ -239,9 +268,27 @@ compileExpr expr =
                                                           (noAnnotation $ SH.SimpleCommand funRef $ (SH.literal (asIdString tmpSym)):cParams)
                 return (finalPrereqs, SH.ReadVar (SH.VarIdent $ asId tmpSym))
 
-      EAnd _ _ -> do
-        (tmpSym, prereq) <- boolTempVar expr
-        return (prereq, SH.ReadVar (SH.VarIdent $ asId tmpSym))
+      EAnd _ _ -> boolSubExpr
+      EOr _ _ -> boolSubExpr
+      ENot _ -> boolSubExpr
+
+      EAdd _ _ -> throwError $ NotSupported "+"
+      ESub _ _ -> throwError $ NotSupported "-"
+      EMul _ _ -> throwError $ NotSupported "*"
+      EDiv _ _ -> throwError $ NotSupported "/"
+
+      ELess _ _ -> throwError $ NotSupported "<"
+      ELessEq _ _ -> throwError $ NotSupported "<="
+      EGreater _ _ -> throwError $ NotSupported ">"
+      EGreaterEq _ _ -> throwError $ NotSupported ">="
+
+      EEq _ _ -> throwError $ NotSupported "=="
+      ENeq _ _ -> throwError $ NotSupported "!="
+  where
+    boolSubExpr = do
+      (tmpSym, prereq) <- boolTempVar expr
+      return (prereq, SH.ReadVar (SH.VarIdent $ asId tmpSym))
+
 
 seqCompileExpr :: (CompilerMonad BashStatement) -> [Expression] -> CompilerMonad (CompilerMonad BashStatement, [BashExpression])
 seqCompileExpr p e = seqCompileExpr' p e []
@@ -328,12 +375,49 @@ typeCheckExpr expr =
                                           | otherwise -> throwError $ InvalidParameterTypes funName expectedTypes paramTypes
             _ -> throwError $ SymbolNotBoundToFunction funName
 
-      EAnd e1 e2 -> do
-        t1 <- typeCheckExpr e1
-        t2 <- typeCheckExpr e2
-        case (t1, t2) of
-         (SimpleType TBool, SimpleType TBool) -> return $ SimpleType TBool
+      ENot e -> do
+        t <- typeCheckExpr e
+        case t of
+         SimpleType TBool -> return $ SimpleType TBool
          _ -> throwError $ InvalidBooleanExpression
+
+      EAnd e1 e2 -> typeCheckBinaryBoolExpr e1 e2
+      EOr e1 e2 -> typeCheckBinaryBoolExpr e1 e2
+
+      EAdd e1 e2 -> typeCheckBinaryNumericExpr e1 e2 TInt
+      ESub e1 e2 -> typeCheckBinaryNumericExpr e1 e2 TInt
+      EMul e1 e2 -> typeCheckBinaryNumericExpr e1 e2 TInt
+      EDiv e1 e2 -> typeCheckBinaryNumericExpr e1 e2 TInt
+
+      ELess e1 e2 -> typeCheckBinaryNumericExpr e1 e2 TBool
+      ELessEq e1 e2 -> typeCheckBinaryNumericExpr e1 e2 TBool
+      EGreater e1 e2 -> typeCheckBinaryNumericExpr e1 e2 TBool
+      EGreaterEq e1 e2 -> typeCheckBinaryNumericExpr e1 e2 TBool
+
+      EEq e1 e2 -> typeCheckEqualityExpr e1 e2
+      ENeq e1 e2 -> typeCheckEqualityExpr e1 e2
+
+  where
+    typeCheckBinaryBoolExpr e1 e2 = do
+      t1 <- typeCheckExpr e1
+      t2 <- typeCheckExpr e2
+      case (t1, t2) of
+       (SimpleType TBool, SimpleType TBool) -> return $ SimpleType TBool
+       _ -> throwError $ InvalidBooleanExpression
+
+    typeCheckBinaryNumericExpr e1 e2 rt = do
+      t1 <- typeCheckExpr e1
+      t2 <- typeCheckExpr e2
+      case (t1, t2) of
+       (SimpleType TInt, SimpleType TInt) -> return $ SimpleType rt
+       _ -> throwError $ InvalidTypesInNumericExpression [t1, t2]
+
+    typeCheckEqualityExpr e1 e2 = do
+      t1 <- typeCheckExpr e1
+      t2 <- typeCheckExpr e2
+      case t1 `typeEq` t2 of
+       True -> return $ SimpleType TBool
+       False -> throwError $ EqualityUsedOnNonEqualTypes [t1, t2]
 
 funType :: [ParamDef] -> Type -> Type
 funType params rettype = TFun (map (\case { ParamDef (_, t) -> t }) params) rettype

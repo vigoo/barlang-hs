@@ -41,8 +41,21 @@ instance Codeable Expression where
              EVar sym -> code sym
              ESysVar sym -> "$"  <+> sym
              EApply fnExpr pExprs -> parenthesis $ fnExpr <+> parenthesis (interleave ", " (codeList  pExprs))
-             EAnd a b -> parenthesis $ (parenthesis $ code a) <++> "and" <++> (parenthesis $ code b)
-             EOr a b -> parenthesis $ (parenthesis $ code a) <++> "or" <++> (parenthesis $ code b)
+             EAnd a b -> binary "and" a b
+             EOr a b -> binary "or" a b
+             ENot e -> code "not" <++> (parenthesis $ code e)
+             EAdd a b -> binary "+" a b
+             ESub a b -> binary "-" a b
+             EMul a b -> binary "*" a b
+             EDiv a b -> binary "/" a b
+             EEq a b -> binary "==" a b
+             ENeq a b -> binary "!=" a b
+             ELess a b -> binary "<" a b
+             ELessEq a b -> binary "<=" a b
+             EGreater a b -> binary ">" a b
+             EGreaterEq a b -> binary ">=" a b
+       where
+         binary op a b = parenthesis $ (parenthesis $ code a) <++> op <++> (parenthesis $ code b)
 
 instance Codeable ParamDef where
     code (ParamDef (name, typ)) = name <+> ": " <+> typ

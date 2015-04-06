@@ -1,5 +1,7 @@
 + Command line arguments, compile & pprint
-- Bool, int, double
++ Bool
+- int
+- double
 - Auto inline
 - If
 - Closure

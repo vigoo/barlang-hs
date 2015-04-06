@@ -39,6 +39,9 @@ idStyle = emptyIdents { _styleReserved = set [ "string"
                                              , "false"
                                              , "and"
                                              , "or"
+                                             , "not"
+                                             , "==", "!=", "<", ">", "<=", ">="
+                                             , "*", "/", "-", "+"
                                              ]
                       }
   where
@@ -109,6 +112,20 @@ term parfun = parens (expression False)
 exprTable :: [[Operator Parser Expression]]
 exprTable = [ [Infix (pure EAnd <* token (reserved "and")) AssocLeft ]
             , [Infix (pure EOr <* token (reserved "or")) AssocLeft ]
+            , [Prefix (pure ENot <* token (reserved "not"))]
+            , [Infix (pure EEq <* token (reserved "==")) AssocLeft
+              ,Infix (pure ENeq <* token (reserved "!=")) AssocLeft
+              ,Infix (pure ELessEq <* token (reserved "<=")) AssocLeft
+              ,Infix (pure EGreaterEq <* token (reserved ">=")) AssocLeft
+              ,Infix (pure EGreater <* token (reserved ">")) AssocLeft
+              ,Infix (pure ELess <* token (reserved "<")) AssocLeft
+              ]
+            , [Infix (pure EMul <* token (reserved "*")) AssocLeft
+              ,Infix (pure EDiv <* token (reserved "/")) AssocLeft
+              ]
+            , [Infix (pure EAdd <* token (reserved "+")) AssocLeft
+              ,Infix (pure ESub <* token (reserved "-")) AssocLeft
+              ]
             ]
 
 expression :: Bool -> Parser Expression

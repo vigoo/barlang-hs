@@ -58,18 +58,31 @@ instance Arbitrary Expression where
                              args <- replicateM k $ arbExpr l
                              fn <- EVar <$> arbitrarySymbolName
                              return $ EApply fn args
-                        , do l1 <- choose (0, n-1)
-                             l2 <- choose (0, n-1)
-                             e1 <- arbExpr l1
-                             e2 <- arbExpr l2
-                             return $ EAnd e1 e2
-                        , do l1 <- choose (0, n-1)
-                             l2 <- choose (0, n-1)
-                             e1 <- arbExpr l1
-                             e2 <- arbExpr l2
-                             return $ EOr e1 e2
-
+                        , binary EAnd
+                        , binary EOr
+                        , binary EAdd
+                        , binary ESub
+                        , binary EMul
+                        , binary EDiv
+                        , binary EEq
+                        , binary ENeq
+                        , binary ELess
+                        , binary ELessEq
+                        , binary EGreater
+                        , binary EGreaterEq
+                        , unary ENot
                         ]
+            where
+              unary c = do
+                l1 <- choose (0, n-1)
+                e1 <- arbExpr l1
+                return $ c e1
+              binary c = do
+                l1 <- choose (0, n-1)
+                l2 <- choose (0, n-1)
+                e1 <- arbExpr l1
+                e2 <- arbExpr l2
+                return $ c e1 e2
 
   shrink (EStringLit _) = [EStringLit "hello"]
   shrink (EVar n) | (length n > 1) = [EVar "x"]

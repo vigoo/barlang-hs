@@ -5,6 +5,7 @@ type SymbolName = String
 data Type = TUnit
           | TString
           | TBool
+          | TInt
           | TFun [Type] Type
           deriving (Show, Eq)
 
@@ -15,6 +16,17 @@ data Expression = EStringLit String
                 | EApply Expression [Expression]
                 | EAnd Expression Expression
                 | EOr Expression Expression
+                | ENot Expression
+                | EAdd Expression Expression
+                | ESub Expression Expression
+                | EMul Expression Expression
+                | EDiv Expression Expression
+                | EEq Expression Expression
+                | ENeq Expression Expression
+                | ELess Expression Expression
+                | ELessEq Expression Expression
+                | EGreater Expression Expression
+                | EGreaterEq Expression Expression
                   deriving (Show, Eq)
 
 newtype ParamDef = ParamDef (SymbolName, Type)
