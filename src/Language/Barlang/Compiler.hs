@@ -255,11 +255,16 @@ boolTempVar expr = do
 compileNumericExpr :: Expression -> CompilerMonad B.ByteString
 compileNumericExpr expr = case expr of
   EIntLit n -> return $ B.fromString $ show n
-  EAdd a b -> do
+  EAdd a b -> compileNumericBinaryOp a b "+"
+  ESub a b -> compileNumericBinaryOp a b "-"
+  EMul a b -> compileNumericBinaryOp a b "*"
+  EDiv a b -> compileNumericBinaryOp a b "/"
+  _ -> throwError $ NotSupported (show expr)
+ where
+   compileNumericBinaryOp a b op = do
     e1 <- compileNumericExpr a
     e2 <- compileNumericExpr b
-    return $ e1 <> " + " <> e2
-  _ -> throwError $ NotSupported (show expr)
+    return $ "(" <> e1 <> ") " <> op <> " (" <> e2 <> ")"
 
 numericTempVar :: Expression -> CompilerMonad (AssignedSymbol, CompilerMonad BashStatement)
 numericTempVar expr = do
