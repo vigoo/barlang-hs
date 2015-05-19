@@ -1,1 +1,2 @@
 - Space should not be required around binary operators
+- Negative numbers should be parseble without parenthesis where it is not ambigous

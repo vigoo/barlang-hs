@@ -199,6 +199,8 @@ compileTestExpr = \case
             return $ "( \"$" <> asIdString asym <> "\" = \"0\" )"
           Just (SimpleType TInt) ->
             return $ "\"" <> asIdString asym <> "\""
+          Just (SimpleType TDouble) ->
+            return $ "\"" <> asIdString asym <> "\""
           Just (SimpleType TString) ->
             return $ "\"" <> asIdString asym <> "\""
           Just t' ->
@@ -252,8 +254,8 @@ boolTempVar expr = do
   let assign = SH.Assign (SH.Var (asId tmpSym) (SH.ReadVar $ SH.VarSpecial SH.DollarQuestion))
   return (tmpSym, return $ SH.Sequence (SH.Annotated (SH.Lines [boolExpr] []) assign) (noAnnotation SH.Empty))
 
-compileNumericExpr :: Expression -> CompilerMonad B.ByteString
-compileNumericExpr expr = case expr of
+compileIntegerExpr :: Expression -> CompilerMonad B.ByteString
+compileIntegerExpr expr = case expr of
   EIntLit n -> return $ B.fromString $ show n
   EAdd a b -> compileNumericBinaryOp a b "+"
   ESub a b -> compileNumericBinaryOp a b "-"
@@ -262,15 +264,36 @@ compileNumericExpr expr = case expr of
   _ -> throwError $ NotSupported (show expr)
  where
    compileNumericBinaryOp a b op = do
-    e1 <- compileNumericExpr a
-    e2 <- compileNumericExpr b
+    e1 <- compileIntegerExpr a
+    e2 <- compileIntegerExpr b
     return $ "(" <> e1 <> ") " <> op <> " (" <> e2 <> ")"
 
-numericTempVar :: Expression -> CompilerMonad (AssignedSymbol, CompilerMonad BashStatement)
-numericTempVar expr = do
-  numExpr <- compileNumericExpr expr
+integerTempVar :: Expression -> CompilerMonad (AssignedSymbol, CompilerMonad BashStatement)
+integerTempVar expr = do
+  numExpr <- compileIntegerExpr expr
   tmpSym <- generateTmpSym
   return (tmpSym, return $ SH.Sequence (SH.Annotated (SH.Lines [(asIdString tmpSym) <> "=$((" <> numExpr <> "))"] []) SH.Empty) (noAnnotation SH.Empty))
+
+compileDoubleExpr :: Expression -> CompilerMonad B.ByteString
+compileDoubleExpr expr = case expr of
+  EIntLit n -> return $ B.fromString $ show n
+  EDoubleLit n -> return $ B.fromString $ show n
+  EAdd a b -> compileNumericBinaryOp a b "+"
+  ESub a b -> compileNumericBinaryOp a b "-"
+  EMul a b -> compileNumericBinaryOp a b "*"
+  EDiv a b -> compileNumericBinaryOp a b "/"
+  _ -> throwError $ NotSupported (show expr)
+ where
+   compileNumericBinaryOp a b op = do
+    e1 <- compileDoubleExpr a
+    e2 <- compileDoubleExpr b
+    return $ "(" <> e1 <> ") " <> op <> " (" <> e2 <> ")"
+
+doubleTempVar :: Expression -> CompilerMonad (AssignedSymbol, CompilerMonad BashStatement)
+doubleTempVar expr = do
+  numExpr <- compileDoubleExpr expr
+  tmpSym <- generateTmpSym
+  return (tmpSym, return $ SH.Sequence (SH.Annotated (SH.Lines [(asIdString tmpSym) <> "=$(bc -l <<< \"" <> numExpr <> "\")"] []) SH.Empty) (noAnnotation SH.Empty))
 
 compileExpr :: Expression -> CompilerMonad (CompilerMonad BashStatement, BashExpression)
 compileExpr expr =
@@ -281,6 +304,8 @@ compileExpr expr =
       EBoolLit True -> return (noPrereq, (SH.literal "0"))
 
       EIntLit n -> return (noPrereq, (SH.literal (B.fromString $ show n)))
+
+      EDoubleLit n -> return (noPrereq, (SH.literal (B.fromString $ show n)))
 
       EVar sym -> do
                 r <- findSymbolM sym
@@ -307,10 +332,10 @@ compileExpr expr =
       EOr _ _ -> boolSubExpr
       ENot _ -> boolSubExpr
 
-      EAdd _ _ -> numericSubExpr
-      ESub _ _ -> numericSubExpr
-      EMul _ _ -> numericSubExpr
-      EDiv _ _ -> numericSubExpr
+      EAdd a b -> numericSubExpr a b
+      ESub a b -> numericSubExpr a b
+      EMul a b -> numericSubExpr a b
+      EDiv a b -> numericSubExpr a b
 
       ELess _ _ -> throwError $ NotSupported "<"
       ELessEq _ _ -> throwError $ NotSupported "<="
@@ -324,9 +349,21 @@ compileExpr expr =
       (tmpSym, prereq) <- boolTempVar expr
       return (prereq, SH.ReadVar (SH.VarIdent $ asId tmpSym))
 
-    numericSubExpr = do
-      (tmpSym, prereq) <- numericTempVar expr
+    integerSubExpr = do
+      (tmpSym, prereq) <- integerTempVar expr
       return (prereq, SH.ReadVar (SH.VarIdent $ asId tmpSym))
+
+    doubleSubExpr = do
+      (tmpSym, prereq) <- doubleTempVar expr
+      return (prereq, SH.ReadVar (SH.VarIdent $ asId tmpSym))
+
+    numericSubExpr a b = do
+      ta <- typeCheckExpr a
+      tb <- typeCheckExpr b
+      case (ta, tb) of
+       (SimpleType TDouble, _) -> doubleSubExpr
+       (_, SimpleType TDouble) -> doubleSubExpr
+       _ -> integerSubExpr
 
 seqCompileExpr :: (CompilerMonad BashStatement) -> [Expression] -> CompilerMonad (CompilerMonad BashStatement, [BashExpression])
 seqCompileExpr p e = seqCompileExpr' p e []
@@ -396,6 +433,8 @@ typeCheckExpr expr =
 
       EIntLit _ -> return $ SimpleType TInt
 
+      EDoubleLit _ -> return $ SimpleType TDouble
+
       EVar sym -> do
                 t <- findTypeM sym
                 case t of
@@ -424,15 +463,15 @@ typeCheckExpr expr =
       EAnd e1 e2 -> typeCheckBinaryBoolExpr e1 e2
       EOr e1 e2 -> typeCheckBinaryBoolExpr e1 e2
 
-      EAdd e1 e2 -> typeCheckBinaryNumericExpr e1 e2 TInt
-      ESub e1 e2 -> typeCheckBinaryNumericExpr e1 e2 TInt
-      EMul e1 e2 -> typeCheckBinaryNumericExpr e1 e2 TInt
-      EDiv e1 e2 -> typeCheckBinaryNumericExpr e1 e2 TInt
+      EAdd e1 e2 -> typeCheckBinaryNumericExpr e1 e2 Nothing
+      ESub e1 e2 -> typeCheckBinaryNumericExpr e1 e2 Nothing
+      EMul e1 e2 -> typeCheckBinaryNumericExpr e1 e2 Nothing
+      EDiv e1 e2 -> typeCheckBinaryNumericExpr e1 e2 Nothing
 
-      ELess e1 e2 -> typeCheckBinaryNumericExpr e1 e2 TBool
-      ELessEq e1 e2 -> typeCheckBinaryNumericExpr e1 e2 TBool
-      EGreater e1 e2 -> typeCheckBinaryNumericExpr e1 e2 TBool
-      EGreaterEq e1 e2 -> typeCheckBinaryNumericExpr e1 e2 TBool
+      ELess e1 e2 -> typeCheckBinaryNumericExpr e1 e2 $ Just TBool
+      ELessEq e1 e2 -> typeCheckBinaryNumericExpr e1 e2 $ Just TBool
+      EGreater e1 e2 -> typeCheckBinaryNumericExpr e1 e2 $ Just TBool
+      EGreaterEq e1 e2 -> typeCheckBinaryNumericExpr e1 e2 $ Just TBool
 
       EEq e1 e2 -> typeCheckEqualityExpr e1 e2
       ENeq e1 e2 -> typeCheckEqualityExpr e1 e2
@@ -449,7 +488,10 @@ typeCheckExpr expr =
       t1 <- typeCheckExpr e1
       t2 <- typeCheckExpr e2
       case (t1, t2) of
-       (SimpleType TInt, SimpleType TInt) -> return $ SimpleType rt
+       (SimpleType TInt, SimpleType TInt) -> return $ SimpleType $ fromMaybe TInt rt
+       (SimpleType TDouble, SimpleType TDouble) -> return $ SimpleType $ fromMaybe TDouble rt
+       (SimpleType TInt, SimpleType TDouble) -> return $ SimpleType $ fromMaybe TDouble rt
+       (SimpleType TDouble, SimpleType TInt) -> return $ SimpleType $ fromMaybe TDouble rt
        _ -> throwError $ InvalidTypesInNumericExpression [t1, t2]
 
     typeCheckEqualityExpr e1 e2 = do

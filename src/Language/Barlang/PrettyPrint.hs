@@ -31,6 +31,8 @@ instance Codeable Type where
              TUnit -> code "unit"
              TString -> code "string"
              TBool -> code "bool"
+             TInt -> code "int"
+             TDouble -> code "double"
              TFun types rett -> (parenthesis $ interleave ", " (codeList types)) <++> "->" <++> rett
 
 instance Codeable Expression where
@@ -39,6 +41,7 @@ instance Codeable Expression where
              EBoolLit True -> code "true"
              EBoolLit False -> code "false"
              EIntLit n -> code (show n)
+             EDoubleLit n -> code (show n)
              EVar sym -> code sym
              ESysVar sym -> "$"  <+> sym
              EApply fnExpr pExprs -> parenthesis $ fnExpr <+> parenthesis (interleave ", " (codeList  pExprs))

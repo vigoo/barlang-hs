@@ -1,7 +1,7 @@
 + Command line arguments, compile & pprint
 + Bool
-* int
-- double
++ int
++ double
 - str()
 - Auto inline
 - If

@@ -6,12 +6,14 @@ data Type = TUnit
           | TString
           | TBool
           | TInt
+          | TDouble
           | TFun [Type] Type
           deriving (Show, Eq)
 
 data Expression = EStringLit String
                 | EBoolLit Bool
                 | EIntLit Int
+                | EDoubleLit Double
                 | EVar SymbolName
                 | ESysVar SymbolName
                 | EApply Expression [Expression]

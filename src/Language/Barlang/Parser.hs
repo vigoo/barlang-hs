@@ -26,6 +26,8 @@ import Language.Barlang.Language
 idStyle :: IdentifierStyle Parser
 idStyle = emptyIdents { _styleReserved = set [ "string"
                                              , "bool"
+                                             , "int"
+                                             , "double"
                                              , "unit"
                                              , "->"
                                              , "return"
@@ -64,6 +66,12 @@ typeString = token $ reserved "string" >> return TString
 typeBool :: Parser Type
 typeBool = token $ reserved "bool" >> return TBool
 
+typeInt :: Parser Type
+typeInt = token $ reserved "int" >> return TInt
+
+typeDouble :: Parser Type
+typeDouble = token $ reserved "double" >> return TDouble
+
 typeFunArrow :: Parser ()
 typeFunArrow = token $ reserved "->"
 
@@ -77,6 +85,8 @@ typeExpr :: Parser Type
 typeExpr = choice [ typeUnit
                   , typeString
                   , typeBool
+                  , typeInt
+                  , typeDouble
                   , typeFun
                   ]
 
@@ -93,6 +103,9 @@ boolLit = EBoolLit <$> (true <|> false)
 intLit :: Parser Expression
 intLit = EIntLit . fromInteger <$> integer
 
+doubleLit :: Parser Expression
+doubleLit = EDoubleLit <$> double
+
 variable :: Parser Expression
 variable = EVar <$> identifier
 
@@ -108,6 +121,7 @@ term :: Bool -> Parser Expression
 term parfun = parens (expression False)
         <|> stringLit
         <|> boolLit
+        <|> try doubleLit
         <|> intLit
         <|> (if parfun then parens funApplication else funApplication)
         <|> variable
