@@ -2,6 +2,7 @@
 + Bool
 - int
 - double
+- str()
 - Auto inline
 - If
 - Closure

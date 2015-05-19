@@ -90,6 +90,9 @@ boolLit = EBoolLit <$> (true <|> false)
     true = token $ reserved "true" >> return True
     false = token $ reserved "false" >> return False
 
+intLit :: Parser Expression
+intLit = EIntLit . fromInteger <$> integer
+
 variable :: Parser Expression
 variable = EVar <$> identifier
 
@@ -105,6 +108,7 @@ term :: Bool -> Parser Expression
 term parfun = parens (expression False)
         <|> stringLit
         <|> boolLit
+        <|> intLit
         <|> (if parfun then parens funApplication else funApplication)
         <|> variable
         <|> systemVariable

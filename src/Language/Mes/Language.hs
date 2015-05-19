@@ -11,6 +11,7 @@ data Type = TUnit
 
 data Expression = EStringLit String
                 | EBoolLit Bool
+                | EIntLit Int
                 | EVar SymbolName
                 | ESysVar SymbolName
                 | EApply Expression [Expression]

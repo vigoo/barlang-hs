@@ -38,6 +38,7 @@ instance Codeable Expression where
              EStringLit str -> surround "\"" "\"" (escape str)
              EBoolLit True -> code "true"
              EBoolLit False -> code "false"
+             EIntLit n -> code (show n)
              EVar sym -> code sym
              ESysVar sym -> "$"  <+> sym
              EApply fnExpr pExprs -> parenthesis $ fnExpr <+> parenthesis (interleave ", " (codeList  pExprs))

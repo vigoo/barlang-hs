@@ -23,11 +23,14 @@ instance Arbitrary Type where
    where
      arbType :: Int -> Gen Type
      arbType 0 = oneof [ pure TUnit
-                           , pure TString
-                           ]
+                       , pure TString
+                       , pure TBool
+                       , pure TInt
+                       ]
      arbType n = oneof [ pure TUnit
                        , pure TString
                        , pure TBool
+                       , pure TInt
                        , do k <- choose (0, n-1)
                             l <- choose (0, n-1)
                             m <- choose (0, n-1)
@@ -46,11 +49,13 @@ instance Arbitrary Expression where
       arbExpr :: Int -> Gen Expression
       arbExpr 0 = oneof [ EStringLit <$> arbitraryStringLiteral
                         , EBoolLit <$> arbitrary
+                        , EIntLit <$> arbitrary
                         , EVar <$> arbitrarySymbolName
                         , ESysVar <$> arbitrarySymbolName
                         ]
       arbExpr n = oneof [ EStringLit <$> arbitraryStringLiteral
                         , EBoolLit <$> arbitrary
+                        , EIntLit <$> arbitrary
                         , EVar <$> arbitrarySymbolName
                         , ESysVar <$> arbitrarySymbolName
                         , do k <- choose (0, n-1)
@@ -85,6 +90,7 @@ instance Arbitrary Expression where
                 return $ c e1 e2
 
   shrink (EStringLit _) = [EStringLit "hello"]
+  shrink (EIntLit _) = [EIntLit 1]
   shrink (EVar n) | (length n > 1) = [EVar "x"]
                   | otherwise = []
   shrink (ESysVar n) | (length n > 1) = [ESysVar "V"]
