@@ -8,9 +8,9 @@ import Options.Applicative hiding (Success, Failure)
 import System.Directory
 import Text.Trifecta.Result
 
-import Language.Mes.Compiler
-import Language.Mes.Parser
-import Language.Mes.PrettyPrint
+import Language.Barlang.Compiler
+import Language.Barlang.Parser
+import Language.Barlang.PrettyPrint
 
 data Parameters = Parameters { pSource :: FilePath
                              , pTarget :: Maybe FilePath

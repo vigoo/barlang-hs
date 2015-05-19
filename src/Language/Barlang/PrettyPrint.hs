@@ -1,11 +1,11 @@
 {-# LANGUAGE LambdaCase, FlexibleInstances #-}
 
-module Language.Mes.PrettyPrint(PrettyPrint(..)
+module Language.Barlang.PrettyPrint(PrettyPrint(..)
                                ,escape
                                ,escapeChar
                                ) where
 
-import Language.Mes.Language
+import Language.Barlang.Language
 
 import Code.Build
 

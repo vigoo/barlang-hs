@@ -7,9 +7,9 @@ import Test.QuickCheck.Test
 
 import qualified Text.Trifecta.Result as Tr
 
-import Language.Mes.Language
-import Language.Mes.Parser
-import Language.Mes.PrettyPrint
+import Language.Barlang.Language
+import Language.Barlang.Parser
+import Language.Barlang.PrettyPrint
 
 -- Arbitrary instances
 arbitrarySymbolName :: Gen SymbolName

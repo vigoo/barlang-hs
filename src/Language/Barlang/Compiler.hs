@@ -1,6 +1,6 @@
 {-# LANGUAGE RecordWildCards, OverloadedStrings, LambdaCase, BangPatterns #-}
 
-module Language.Mes.Compiler where
+module Language.Barlang.Compiler where
 
 import Control.Monad.Except
 import Control.Monad.State
@@ -14,7 +14,7 @@ import qualified Language.Bash as SH
 import qualified Language.Bash.Annotations as SH
 import qualified Language.Bash.Syntax as SH
 import qualified Language.Bash.PrettyPrinter as SHPP
-import Language.Mes.Language
+import Language.Barlang.Language
 import Text.Printf
 
 type Scope = String

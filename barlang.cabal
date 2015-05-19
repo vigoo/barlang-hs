@@ -1,12 +1,9 @@
-name:                mes
+name:                barlang
 
--- PVP summary:      +-+------- breaking API changes
---                   | | +----- non-breaking API additions
---                   | | | +--- code changes with no API change
 version:             0.1.0.0
 synopsis:            Statically typed shell scripting domain language compiled to bash
 -- description:         
-homepage:            https://github.com/vigoo/mes
+homepage:            https://github.com/vigoo/barlang
 license:             Apache-2.0
 license-file:        LICENSE
 
@@ -26,10 +23,10 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Language.Mes.Compiler
-                     , Language.Mes.Language
-                     , Language.Mes.Parser
-                     , Language.Mes.PrettyPrint
+  exposed-modules:     Language.Barlang.Compiler
+                     , Language.Barlang.Language
+                     , Language.Barlang.Parser
+                     , Language.Barlang.PrettyPrint
 
   build-depends:       base >=4.7 && <4.8
                      , bash ==0.1.*
@@ -79,12 +76,12 @@ executable mes
                      , code-builder
                      , optparse-applicative
 
-                     , mes
+                     , barlang
   
   hs-source-dirs:      src
   default-language:    Haskell2010
 
-test-suite mes-test
+test-suite barlang-test
   type:                exitcode-stdio-1.0
   main-is:             Tests.hs
 

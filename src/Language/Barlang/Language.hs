@@ -1,4 +1,4 @@
-module Language.Mes.Language where
+module Language.Barlang.Language where
 
 type SymbolName = String
 

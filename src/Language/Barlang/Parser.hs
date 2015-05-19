@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Language.Mes.Parser ( parseType
+module Language.Barlang.Parser ( parseType
                            , parseExpr
                            , parseMes
                            , parseMesFile
@@ -21,7 +21,7 @@ import Text.Trifecta.Result
 import qualified Text.PrettyPrint.ANSI.Leijen as Pretty hiding (line, (<>), (<$>), empty)
 import System.IO
 
-import Language.Mes.Language
+import Language.Barlang.Language
 
 idStyle :: IdentifierStyle Parser
 idStyle = emptyIdents { _styleReserved = set [ "string"
