@@ -1,10 +1,12 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
 module Language.Barlang.Parser ( parseType
-                           , parseExpr
-                           , parseMes
-                           , parseMesFile
-                           , showParseError
-                           ) where
+                               , parseExpr
+                               , parseMes
+                               , parseMesFile
+                               , showParseError
+                               )
+       where
 
 import Control.Applicative
 import Control.Monad.IO.Class
@@ -106,6 +108,11 @@ intLit = EIntLit . fromInteger <$> integer
 doubleLit :: Parser Expression
 doubleLit = EDoubleLit <$> double
 
+numLit :: Parser Expression
+numLit = integerOrDouble >>= \case
+  Left i -> return $ EIntLit $ fromInteger i
+  Right d -> return $ EDoubleLit d
+
 variable :: Parser Expression
 variable = EVar <$> identifier
 
@@ -121,8 +128,7 @@ term :: Bool -> Parser Expression
 term parfun = parens (expression False)
         <|> stringLit
         <|> boolLit
-        <|> try doubleLit
-        <|> intLit
+        <|> numLit
         <|> (if parfun then parens funApplication else funApplication)
         <|> variable
         <|> systemVariable
