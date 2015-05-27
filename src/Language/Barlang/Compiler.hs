@@ -1,21 +1,31 @@
-{-# LANGUAGE RecordWildCards, OverloadedStrings, LambdaCase, BangPatterns #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 module Language.Barlang.Compiler where
 
-import Control.Monad.Except
-import Control.Monad.State
-import qualified Data.ByteString.UTF8 as B
-import qualified Data.ByteString.Lazy.UTF8 as BL
-import Data.Binary.Builder
-import qualified Data.Map as Map
-import Data.Maybe
-import Data.Monoid
-import qualified Language.Bash as SH
-import qualified Language.Bash.Annotations as SH
-import qualified Language.Bash.Syntax as SH
+import           Control.Applicative
+import           Control.Monad.Except
+import           Control.Monad.State
+import           Control.Monad.Writer.Lazy
+import           Data.Binary.Builder
+import qualified Data.ByteString.Lazy.UTF8   as BL
+import qualified Data.ByteString.UTF8        as B
+import qualified Data.Map                    as Map
+import           Data.Maybe
+import           Data.Monoid
+import           Debug.Trace
+import           Language.Barlang.Language
+import qualified Language.Bash               as SH
+import qualified Language.Bash.Annotations   as SH
 import qualified Language.Bash.PrettyPrinter as SHPP
-import Language.Barlang.Language
-import Text.Printf
+import qualified Language.Bash.Syntax        as SH
+import           Text.Printf
+import           Text.ShellEscape
 
 type Scope = String
 type BashStatement = SH.Statement SH.Lines
@@ -30,7 +40,7 @@ data CompilerError = InvalidFunctionContext
                    | InvalidParameterTypes SymbolName [Type] [ExtendedType]
                    | InvalidReturnType SymbolName Type ExtendedType
                    | InvalidParametersForRunStatement
-                   | InvalidBooleanExpression
+                   | InvalidBooleanExpression (Maybe Expression)
                    | InvalidTypesInNumericExpression [ExtendedType]
                    | EqualityUsedOnNonEqualTypes [ExtendedType]
                    | UnsupportedTypeInBooleanExpression ExtendedType
@@ -38,9 +48,9 @@ data CompilerError = InvalidFunctionContext
 
 type CompilerMonad = ExceptT CompilerError (State Context)
 
-data AssignedSymbol = AssignedSymbol { asName :: SymbolName
+data AssignedSymbol = AssignedSymbol { asName     :: SymbolName
                                      , asIdString :: B.ByteString
-                                     , asId :: SH.Identifier
+                                     , asId       :: SH.Identifier
                                      }
                     deriving (Show)
 
@@ -67,12 +77,58 @@ instance (TypeEq a) => TypeEq [a] where
   typeEq [] (_:_) = False
   typeEq (x:xs) (y:ys) = x `typeEq` y && xs `typeEq` ys
 
-data Context = Context { ctxScope :: Scope
-                       , ctxSymbols :: Map.Map SymbolName AssignedSymbol
+data Context = Context { ctxScope       :: Scope
+                       , ctxSymbols     :: Map.Map SymbolName AssignedSymbol
                        , ctxSymbolTypes :: Map.Map SymbolName ExtendedType
-                       , ctxLastTmp :: Int
+                       , ctxLastTmp     :: Int
                        }
              deriving (Show)
+
+type ExpressionCompilerMonad = WriterT (CompilerMonad BashStatement) CompilerMonad
+
+prereq :: CompilerMonad BashStatement -> ExpressionCompilerMonad ()
+prereq = tell
+
+noPrereq :: CompilerMonad BashStatement
+noPrereq = return SH.Empty
+
+mergeStatements :: CompilerMonad BashStatement -> CompilerMonad BashStatement -> CompilerMonad BashStatement
+mergeStatements ma mb = do
+  a <- ma
+  b <- mb
+  return $ SH.Sequence (noAnnotation a) (noAnnotation b)
+
+instance Monoid (CompilerMonad BashStatement) where
+  mappend = mergeStatements
+  mempty = noPrereq
+
+compileExpression :: (Expression -> ExpressionCompilerMonad BashExpression)
+                  -> (BashExpression -> CompilerMonad BashStatement)
+                  -> Expression
+                  -> CompilerMonad BashStatement
+compileExpression fn res expr = do (e, prereqs) <- runWriterT (fn expr)
+                                   s <- res e
+                                   prereqs <> return s
+
+compileExpression' :: Expression
+                   -> (Expression -> ExpressionCompilerMonad BashExpression)
+                   -> (BashExpression -> CompilerMonad BashStatement)
+                   -> CompilerMonad BashStatement
+compileExpression' expr fn res = compileExpression fn res expr
+
+compileExpressions :: (Expression -> ExpressionCompilerMonad BashExpression)
+                   -> ([BashExpression] -> CompilerMonad BashStatement)
+                   -> [Expression]
+                   -> CompilerMonad BashStatement
+compileExpressions fn res exprs = do partials <- mapM (runWriterT . fn) exprs
+                                     s <- res (map fst partials)
+                                     mconcat (map snd partials) <> return s
+
+compileExpressions' :: [Expression]
+                    -> (Expression -> ExpressionCompilerMonad BashExpression)
+                    -> ([BashExpression] -> CompilerMonad BashStatement)
+                    -> CompilerMonad BashStatement
+compileExpressions' exprs fn res = compileExpressions fn res exprs
 
 setSafe' :: SH.Statement t
 setSafe' = SH.SimpleCommand "set" [ "-o", "nounset"
@@ -139,22 +195,22 @@ createIdentifierM sym = do
 storeType :: Context -> SymbolName -> ExtendedType -> Context
 storeType ctx@Context{..} sym typ = ctx { ctxSymbolTypes = Map.insert sym typ ctxSymbolTypes }
 
-storeTypeM :: SymbolName -> ExtendedType -> CompilerMonad ()
+storeTypeM :: (MonadState Context m) => SymbolName -> ExtendedType -> m ()
 storeTypeM sym typ = modify (\ctx -> storeType ctx sym typ)
 
 findSymbol :: Context -> SymbolName -> Maybe AssignedSymbol
 findSymbol Context{..} sym = Map.lookup sym ctxSymbols
 
-findSymbolM :: SymbolName -> CompilerMonad (Maybe AssignedSymbol)
+findSymbolM :: (MonadState Context m) => SymbolName -> m (Maybe AssignedSymbol)
 findSymbolM sym = gets $ \ctx -> findSymbol ctx sym
 
 findType :: Context -> SymbolName -> Maybe ExtendedType
 findType Context{..} sym = Map.lookup sym ctxSymbolTypes
 
-findTypeM :: SymbolName -> CompilerMonad (Maybe ExtendedType)
+findTypeM :: (MonadState Context m) => SymbolName -> m (Maybe ExtendedType)
 findTypeM sym = gets $ \ctx -> findType ctx sym
 
-generateTmpSym :: CompilerMonad AssignedSymbol
+generateTmpSym :: (MonadState Context m) => m AssignedSymbol
 generateTmpSym = do
   ctx <- get
   let next = 1 + (ctxLastTmp ctx)
@@ -177,15 +233,7 @@ withFunctionHeader ctx@Context{..} params rettype stIn = SH.Sequence (noAnnotati
       decls = map (\case { (ParamDef (n, _), i) -> assignParam n i }) (params `zip` [startIdx..(startIdx+paramCount-1)])
       funHeader = foldl (\s1 s2 -> SH.Sequence (noAnnotation s1) (noAnnotation s2)) declRetVar decls
 
-withPrereqs :: CompilerMonad BashStatement -> BashStatement -> CompilerMonad BashStatement
-withPrereqs prereqs st = do
-  pst <- prereqs
-  return $ SH.Sequence (noAnnotation pst) (noAnnotation st)
-
-noPrereq :: CompilerMonad BashStatement
-noPrereq = return SH.Empty
-
-compileTestExpr :: Expression -> CompilerMonad B.ByteString
+compileTestExpr :: Expression -> ExpressionCompilerMonad B.ByteString
 compileTestExpr = \case
     EBoolLit True -> return "TRUE"
     EBoolLit False -> return "\"\""
@@ -217,14 +265,21 @@ compileTestExpr = \case
     EEq a b -> binaryTestExpr a b "="
     ENeq a b -> binaryTestExpr a b "!="
 
-    _ -> throwError InvalidBooleanExpression
+    e -> do
+      nr <- numericSubExpr e
+      case nr of
+       Just (SH.ReadVar (SH.VarIdent (SH.Identifier tmpSymId))) ->
+         return $ "\"" <> (B.fromString $ show tmpSymId) <> "\""
+       Just (SH.Literal l) ->
+         return $ "\"" <> (unescape l) <> "\""
+       _ -> throwError $ InvalidBooleanExpression $ Just e
   where
     binaryTestExpr a b op = do
       e1 <- compileTestExpr a
       e2 <- compileTestExpr b
       return $ e1 <> " " <> op <> " " <> e2
 
-compileBoolExpr :: Expression -> CompilerMonad B.ByteString
+compileBoolExpr :: Expression -> ExpressionCompilerMonad B.ByteString
 compileBoolExpr expr = case expr of
   EBoolLit True -> return "true"
   EBoolLit False -> return "false"
@@ -247,14 +302,15 @@ compileBoolExpr expr = case expr of
     e' <- compileTestExpr expr
     return $ "[[ " <> e' <> " ]]"
 
-boolTempVar :: Expression -> CompilerMonad (AssignedSymbol, CompilerMonad BashStatement)
+boolTempVar :: Expression -> ExpressionCompilerMonad AssignedSymbol
 boolTempVar expr = do
   boolExpr <- compileBoolExpr expr
   tmpSym <- generateTmpSym
   let assign = SH.Assign (SH.Var (asId tmpSym) (SH.ReadVar $ SH.VarSpecial SH.DollarQuestion))
-  return (tmpSym, return $ SH.Sequence (SH.Annotated (SH.Lines [boolExpr] []) assign) (noAnnotation SH.Empty))
+  prereq $ return $ SH.Sequence (SH.Annotated (SH.Lines [boolExpr] []) assign) (noAnnotation SH.Empty)
+  return tmpSym
 
-compileIntegerExpr :: Expression -> CompilerMonad B.ByteString
+compileIntegerExpr :: Expression -> ExpressionCompilerMonad B.ByteString
 compileIntegerExpr expr = case expr of
   EIntLit n -> return $ B.fromString $ show n
   EAdd a b -> compileNumericBinaryOp a b "+"
@@ -268,13 +324,14 @@ compileIntegerExpr expr = case expr of
     e2 <- compileIntegerExpr b
     return $ "(" <> e1 <> ") " <> op <> " (" <> e2 <> ")"
 
-integerTempVar :: Expression -> CompilerMonad (AssignedSymbol, CompilerMonad BashStatement)
+integerTempVar :: Expression -> ExpressionCompilerMonad AssignedSymbol
 integerTempVar expr = do
   numExpr <- compileIntegerExpr expr
   tmpSym <- generateTmpSym
-  return (tmpSym, return $ SH.Sequence (SH.Annotated (SH.Lines [(asIdString tmpSym) <> "=$((" <> numExpr <> "))"] []) SH.Empty) (noAnnotation SH.Empty))
+  prereq $ return $ SH.Sequence (SH.Annotated (SH.Lines [(asIdString tmpSym) <> "=$((" <> numExpr <> "))"] []) SH.Empty) (noAnnotation SH.Empty)
+  return tmpSym
 
-compileDoubleExpr :: Expression -> CompilerMonad B.ByteString
+compileDoubleExpr :: Expression -> ExpressionCompilerMonad B.ByteString
 compileDoubleExpr expr = case expr of
   EIntLit n -> return $ B.fromString $ show n
   EDoubleLit n -> return $ B.fromString $ show n
@@ -289,23 +346,58 @@ compileDoubleExpr expr = case expr of
     e2 <- compileDoubleExpr b
     return $ "(" <> e1 <> ") " <> op <> " (" <> e2 <> ")"
 
-doubleTempVar :: Expression -> CompilerMonad (AssignedSymbol, CompilerMonad BashStatement)
+doubleTempVar :: Expression -> ExpressionCompilerMonad AssignedSymbol
 doubleTempVar expr = do
   numExpr <- compileDoubleExpr expr
   tmpSym <- generateTmpSym
-  return (tmpSym, return $ SH.Sequence (SH.Annotated (SH.Lines [(asIdString tmpSym) <> "=$(bc -l <<< \"" <> numExpr <> "\")"] []) SH.Empty) (noAnnotation SH.Empty))
+  prereq $ return $ SH.Sequence (SH.Annotated (SH.Lines [(asIdString tmpSym) <> "=$(bc -l <<< \"" <> numExpr <> "\")"] []) SH.Empty) (noAnnotation SH.Empty)
+  return tmpSym
 
-compileExpr :: Expression -> CompilerMonad (CompilerMonad BashStatement, BashExpression)
+boolSubExpr :: Expression -> ExpressionCompilerMonad (Maybe BashExpression)
+boolSubExpr expr = do
+    case expr of
+      EAnd _ _ -> boolSubExpr'
+      EOr _ _ -> boolSubExpr'
+      ENot _ -> boolSubExpr'
+      EEq _ _ -> boolSubExpr'
+      ENeq _ _ -> boolSubExpr'
+      _ -> return Nothing
+  where
+    boolSubExpr' = do
+      tmpSym <- boolTempVar expr
+      return $ Just (SH.ReadVar (SH.VarIdent $ asId tmpSym))
+
+numericSubExpr :: Expression -> ExpressionCompilerMonad (Maybe BashExpression)
+numericSubExpr expr = do
+    case expr of
+      EAdd a b -> numericSubExpr' a b
+      ESub a b -> numericSubExpr' a b
+      EMul a b -> numericSubExpr' a b
+      EDiv a b -> numericSubExpr' a b
+      EIntLit n -> return $ Just (SH.literal (B.fromString $ show n))
+      EDoubleLit n -> return $ Just (SH.literal (B.fromString $ show n))
+      _ -> return Nothing
+  where
+    numericSubExpr' :: Expression -> Expression -> ExpressionCompilerMonad (Maybe BashExpression)
+    numericSubExpr' a b = do
+      ta <- typeCheckExpr a
+      tb <- typeCheckExpr b
+      case (ta, tb) of
+       (SimpleType TDouble, _) -> subExpr doubleTempVar
+       (_, SimpleType TDouble) -> subExpr doubleTempVar
+       _ -> subExpr integerTempVar
+
+    subExpr fn = do
+      tmpSym <- fn expr
+      return $ Just (SH.ReadVar (SH.VarIdent $ asId tmpSym))
+
+compileExpr :: Expression -> ExpressionCompilerMonad BashExpression
 compileExpr expr =
     case expr of
-      EStringLit str -> return (noPrereq, (SH.literal . B.fromString) str)
+      EStringLit str -> return ((SH.literal . B.fromString) str)
 
-      EBoolLit False -> return (noPrereq, (SH.literal "1"))
-      EBoolLit True -> return (noPrereq, (SH.literal "0"))
-
-      EIntLit n -> return (noPrereq, (SH.literal (B.fromString $ show n)))
-
-      EDoubleLit n -> return (noPrereq, (SH.literal (B.fromString $ show n)))
+      EBoolLit False -> return $ SH.literal "1"
+      EBoolLit True -> return $ SH.literal "0"
 
       EVar sym -> do
                 r <- findSymbolM sym
@@ -313,69 +405,31 @@ compileExpr expr =
                 case r of
                   Just asym ->
                       case t of
-                        Just (SimpleType (TFun _ _)) -> return (noPrereq, (SH.literal $ asIdString asym))
-                        _ ->  return (noPrereq, SH.ReadVar (SH.VarIdent $ asId asym))
+                        Just (SimpleType (TFun _ _)) -> return (SH.literal $ asIdString asym)
+                        _ ->  return (SH.ReadVar (SH.VarIdent $ asId asym))
                   Nothing -> throwError $ UndefinedSymbol sym
 
-      ESysVar sym -> return (noPrereq, SH.ReadVar (SH.VarIdent ((SH.Identifier . B.fromString) sym)))
+      ESysVar sym -> return $ SH.ReadVar (SH.VarIdent ((SH.Identifier . B.fromString) sym))
 
       EApply funRefExpr params -> do
-                (prereq1, funRef) <- compileExpr funRefExpr
-                (prereqs, cParams) <- seqCompileExpr prereq1 params
+                funRef <- compileExpr funRefExpr
+                cParams <- mapM compileExpr params
                 tmpSym <- generateTmpSym
-                let finalPrereqs = withPrereqs prereqs $ SH.Sequence
-                                                          (noAnnotation $ SH.Assign $ SH.Var (asId tmpSym) (SH.literal ""))
-                                                          (noAnnotation $ SH.SimpleCommand funRef $ (SH.literal (asIdString tmpSym)):cParams)
-                return (finalPrereqs, SH.ReadVar (SH.VarIdent $ asId tmpSym))
-
-      EAnd _ _ -> boolSubExpr
-      EOr _ _ -> boolSubExpr
-      ENot _ -> boolSubExpr
-
-      EAdd a b -> numericSubExpr a b
-      ESub a b -> numericSubExpr a b
-      EMul a b -> numericSubExpr a b
-      EDiv a b -> numericSubExpr a b
+                prereq $ return $ SH.Sequence
+                  (noAnnotation $ SH.Assign $ SH.Var (asId tmpSym) (SH.literal ""))
+                  (noAnnotation $ SH.SimpleCommand funRef $ (SH.literal (asIdString tmpSym)):cParams)
+                return $ SH.ReadVar (SH.VarIdent $ asId tmpSym)
 
       ELess _ _ -> throwError $ NotSupported "<"
       ELessEq _ _ -> throwError $ NotSupported "<="
       EGreater _ _ -> throwError $ NotSupported ">"
       EGreaterEq _ _ -> throwError $ NotSupported ">="
-
-      EEq _ _ -> boolSubExpr
-      ENeq _ _ -> boolSubExpr
-  where
-    boolSubExpr = do
-      (tmpSym, prereq) <- boolTempVar expr
-      return (prereq, SH.ReadVar (SH.VarIdent $ asId tmpSym))
-
-    integerSubExpr = do
-      (tmpSym, prereq) <- integerTempVar expr
-      return (prereq, SH.ReadVar (SH.VarIdent $ asId tmpSym))
-
-    doubleSubExpr = do
-      (tmpSym, prereq) <- doubleTempVar expr
-      return (prereq, SH.ReadVar (SH.VarIdent $ asId tmpSym))
-
-    numericSubExpr a b = do
-      ta <- typeCheckExpr a
-      tb <- typeCheckExpr b
-      case (ta, tb) of
-       (SimpleType TDouble, _) -> doubleSubExpr
-       (_, SimpleType TDouble) -> doubleSubExpr
-       _ -> integerSubExpr
-
-seqCompileExpr :: (CompilerMonad BashStatement) -> [Expression] -> CompilerMonad (CompilerMonad BashStatement, [BashExpression])
-seqCompileExpr p e = seqCompileExpr' p e []
-    where
-      seqCompileExpr' :: (CompilerMonad BashStatement) -> [Expression] -> [BashExpression] -> CompilerMonad (CompilerMonad BashStatement, [BashExpression])
-      seqCompileExpr' prereq [] rs = return (prereq, reverse rs)
-      seqCompileExpr' prereq (expr:exprs) rs = do
-        (prereq', res) <- compileExpr expr
-        seqCompileExpr' (do pst <- prereq
-                            pst' <- prereq'
-                            return $ SH.Sequence (noAnnotation pst) (noAnnotation pst')
-                        ) exprs (res:rs)
+      _ -> do
+        br <- boolSubExpr expr
+        nr <- numericSubExpr expr
+        case br <|> nr of
+         Just result -> return result
+         Nothing -> throwError $ NotSupported (show expr)
 
 compileSt :: Statement -> CompilerMonad BashStatement
 compileSt st =
@@ -388,8 +442,8 @@ compileSt st =
                 Just _ -> throwError $ SymbolAlreadyDefined sym
                 Nothing -> do
                        asym <- createIdentifierM sym
-                       (prereqs, cExpr) <- compileExpr expr
-                       withPrereqs prereqs $ SH.Assign $ SH.Var (asId asym) cExpr
+                       compileExpression' expr compileExpr $
+                         \cExpr -> return $ SH.Assign $ SH.Var (asId asym) cExpr
 
       SDefFun sym pdef rettype stIn -> do
               r <- findSymbolM sym
@@ -407,24 +461,21 @@ compileSt st =
               return $ SH.Sequence (noAnnotation t1) (noAnnotation t2)
 
       SCall funRefExpr params -> do
-              (prereq1, funRef) <- compileExpr funRefExpr
-              (prereqs, cParams) <- seqCompileExpr prereq1 params
-              withPrereqs prereqs $ SH.SimpleCommand funRef cParams
+        compileExpression' funRefExpr compileExpr $ \funRef -> do
+          compileExpressions' params compileExpr $ \cParams -> return $ SH.SimpleCommand funRef cParams
 
       SReturn expr -> do
-              (prereq, cExpr) <- compileExpr expr
-              ctx <- get
-              let setRetVal = SH.Local (SH.Var (retValId ctx) cExpr)
-                  passToCaller = B.fromString $ printf "eval $%s=\"$%s\"" (retVarName ctx) (retValName ctx)
-              withPrereqs prereq $ SH.Sequence (SH.Annotated (SH.Lines [] [passToCaller]) setRetVal) (noAnnotation SH.Empty)
+        compileExpression' expr compileExpr $ \cExpr -> do
+          ctx <- get
+          let setRetVal = SH.Local (SH.Var (retValId ctx) cExpr)
+              passToCaller = B.fromString $ printf "eval $%s=\"$%s\"" (retVarName ctx) (retValName ctx)
+          return $ SH.Sequence (SH.Annotated (SH.Lines [] [passToCaller]) setRetVal) (noAnnotation SH.Empty)
 
       SRun program params -> do
-              (prereq1, cProgram) <- compileExpr program
-              (prereqs, cParams) <- seqCompileExpr prereq1 params
-              withPrereqs prereqs $ SH.SimpleCommand cProgram cParams
+        compileExpression' program compileExpr $ \cProgram -> do
+          compileExpressions' params compileExpr $ \cParams -> return $ SH.SimpleCommand cProgram cParams
 
-
-typeCheckExpr :: Expression -> CompilerMonad ExtendedType
+typeCheckExpr :: (MonadState Context m, MonadError CompilerError m) => Expression -> m ExtendedType
 typeCheckExpr expr =
     case expr of
       EStringLit _ -> return $ SimpleType TString
@@ -458,7 +509,7 @@ typeCheckExpr expr =
         t <- typeCheckExpr e
         case t of
          SimpleType TBool -> return $ SimpleType TBool
-         _ -> throwError $ InvalidBooleanExpression
+         _ -> throwError $ InvalidBooleanExpression $ Just expr
 
       EAnd e1 e2 -> typeCheckBinaryBoolExpr e1 e2
       EOr e1 e2 -> typeCheckBinaryBoolExpr e1 e2
@@ -482,7 +533,7 @@ typeCheckExpr expr =
       t2 <- typeCheckExpr e2
       case (t1, t2) of
        (SimpleType TBool, SimpleType TBool) -> return $ SimpleType TBool
-       _ -> throwError $ InvalidBooleanExpression
+       _ -> throwError $ InvalidBooleanExpression Nothing
 
     typeCheckBinaryNumericExpr e1 e2 rt = do
       t1 <- typeCheckExpr e1

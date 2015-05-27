@@ -42,6 +42,7 @@ library
                      , semigroups
                      , transformers
                      , unordered-containers
+                     , shell-escape
 
                      , QuickCheck ==2.*
                      , HUnit
@@ -75,6 +76,7 @@ executable barlang
                      , unordered-containers
                      , code-builder
                      , optparse-applicative
+                     , shell-escape
 
                      , barlang
   
