@@ -1,16 +1,16 @@
-import Control.Applicative
-import Control.Monad
-import Data.Char
-import System.Exit
-import Test.QuickCheck
-import Test.QuickCheck.Property
-import Test.QuickCheck.Test
+import           Control.Applicative
+import           Control.Monad
+import           Data.Char
+import           System.Exit
+import           Test.QuickCheck
+import           Test.QuickCheck.Property
+import           Test.QuickCheck.Test
 
-import qualified Text.Trifecta.Result as Tr
+import qualified Text.Trifecta.Result         as Tr
 
-import Language.Barlang.Language
-import Language.Barlang.Parser
-import Language.Barlang.PrettyPrint
+import           Language.Barlang.Language
+import           Language.Barlang.Parser
+import           Language.Barlang.PrettyPrint
 
 -- Arbitrary instances
 arbitrarySymbolName :: Gen SymbolName

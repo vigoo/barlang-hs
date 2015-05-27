@@ -1,20 +1,20 @@
 {-# LANGUAGE RecordWildCards #-}
 
-import Prelude hiding (sequence)
+import           Prelude                      hiding (sequence)
 
-import Control.Applicative
-import Control.Monad
-import Options.Applicative hiding (Success, Failure)
-import System.Directory
-import Text.Trifecta.Result
+import           Control.Applicative
+import           Control.Monad
+import           Options.Applicative          hiding (Failure, Success)
+import           System.Directory
+import           Text.Trifecta.Result
 
-import Language.Barlang.Compiler
-import Language.Barlang.Parser
-import Language.Barlang.PrettyPrint
+import           Language.Barlang.Compiler
+import           Language.Barlang.Parser
+import           Language.Barlang.PrettyPrint
 
-data Parameters = Parameters { pSource :: FilePath
-                             , pTarget :: Maybe FilePath
-                             , pDumpAST :: Bool
+data Parameters = Parameters { pSource     :: FilePath
+                             , pTarget     :: Maybe FilePath
+                             , pDumpAST    :: Bool
                              , pPPrintOnly :: Bool
                              }
 

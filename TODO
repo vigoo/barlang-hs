@@ -2,9 +2,9 @@
 + Bool
 + int
 + double
-- Nesting numeric and boolean expressions
-  - subexprs must also return prereqs
-  - refactor bool/int/double subexpr entry points to be reusable from each other
++ Nesting numeric and boolean expressions
+  + subexprs must also return prereqs
+  + refactor bool/int/double subexpr entry points to be reusable from each other
 - str()
 - Auto inline
 - If

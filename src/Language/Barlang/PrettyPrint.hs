@@ -1,13 +1,14 @@
-{-# LANGUAGE LambdaCase, FlexibleInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase        #-}
 
 module Language.Barlang.PrettyPrint(PrettyPrint(..)
                                ,escape
                                ,escapeChar
                                ) where
 
-import Language.Barlang.Language
+import           Language.Barlang.Language
 
-import Code.Build
+import           Code.Build
 
 escapeChar :: Char -> String
 escapeChar ch = case ch of

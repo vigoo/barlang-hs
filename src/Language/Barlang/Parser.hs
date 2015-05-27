@@ -1,5 +1,5 @@
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE LambdaCase #-}
 module Language.Barlang.Parser ( parseType
                                , parseExpr
                                , parseMes
@@ -8,22 +8,23 @@ module Language.Barlang.Parser ( parseType
                                )
        where
 
-import Control.Applicative
-import Control.Monad.IO.Class
-import qualified Data.HashSet as HashSet
-import Data.Semigroup
-import Text.Parser.Combinators
-import Text.Parser.Char
-import Text.Parser.Expression
-import Text.Parser.Token
-import Text.Parser.Token.Style
-import Text.Trifecta.Delta
-import Text.Trifecta.Parser
-import Text.Trifecta.Result
-import qualified Text.PrettyPrint.ANSI.Leijen as Pretty hiding (line, (<>), (<$>), empty)
-import System.IO
+import           Control.Applicative
+import           Control.Monad.IO.Class
+import qualified Data.HashSet                 as HashSet
+import           Data.Semigroup
+import           System.IO
+import           Text.Parser.Char
+import           Text.Parser.Combinators
+import           Text.Parser.Expression
+import           Text.Parser.Token
+import           Text.Parser.Token.Style
+import qualified Text.PrettyPrint.ANSI.Leijen as Pretty hiding (empty, line,
+                                                         (<$>), (<>))
+import           Text.Trifecta.Delta
+import           Text.Trifecta.Parser
+import           Text.Trifecta.Result
 
-import Language.Barlang.Language
+import           Language.Barlang.Language
 
 idStyle :: IdentifierStyle Parser
 idStyle = emptyIdents { _styleReserved = set [ "string"
