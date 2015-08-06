@@ -1,0 +1,17 @@
+flags: {}
+packages:
+  - '.'
+  - location:
+      git: https://github.com/solidsnack/bash.git
+      commit: 512cacb051d7e7c72192462fd19dada8342204e2
+    subdirs:
+      - hs
+    extra-dep: true
+  - location:
+      git: https://github.com/solidsnack/shell-escape.git
+      commit: 056c7b308be32ffeafec815907699f6c27536b1e
+    extra-dep: true
+extra-deps:
+  - bash-0.1
+  - shell-escape-0.2
+resolver: lts-2.19
