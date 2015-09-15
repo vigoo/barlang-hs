@@ -27,6 +27,9 @@ parensIfNotVar expr = case expr of
   EVar _ -> code expr
   _ -> parenthesis (code expr)
 
+instance Codeable TypeParam where
+  code (TypeParam sym _) = code sym
+
 instance Codeable Type where
     code = \case
              TUnit -> code "unit"
@@ -34,7 +37,12 @@ instance Codeable Type where
              TBool -> code "bool"
              TInt -> code "int"
              TDouble -> code "double"
-             TFun types rett -> (parenthesis $ interleave ", " (codeList types)) <++> "->" <++> rett
+             TFun tps types rett ->
+               case tps of
+                [] -> body
+                _ -> (square $ interleave ", " (codeList tps)) <+> body
+               where body = (parenthesis $ interleave ", " (codeList types)) <++> "->" <++> rett
+             TVar tp -> code tp
 
 instance Codeable Expression where
     code = \case
@@ -68,7 +76,11 @@ instance Codeable ParamDef where
 instance Codeable Statement where
     code = \case
              SVarDecl sym expr ->  "val" <++> sym <++> "=" <++> expr <+> ";"
-             SDefFun sym pdefs rett body -> ("def" <++> sym <+> parenthesis (interleave ", " (codeList pdefs)) <+> ":" <++> rett) <-> indent 4 body <-> "end;"
+             SDefFun sym tps pdefs rett body -> ("def" <++> symWithTps <+> parenthesis (interleave ", " (codeList pdefs)) <+> ":" <++> rett) <-> indent 4 body <-> "end;"
+               where
+                 symWithTps = case tps of
+                   [] -> code sym
+                   _ -> sym <+> square (interleave ", " (codeList tps))
              SSequence s1 s2 -> s1 <-> s2
              SCall fnExpr pExprs -> (parensIfNotVar fnExpr) <++> parenthesis (interleave ", " (codeList pExprs)) <+> ";"
              SRun runExpr pExprs -> "> " <+> runExpr <++> (interleave " " (codeList pExprs)) <+> ";"

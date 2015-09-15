@@ -11,7 +11,8 @@ module Language.Barlang.Parser ( parseType
 import           Control.Applicative
 import           Control.Monad.IO.Class
 import qualified Data.HashSet                 as HashSet
-import           Data.Semigroup
+import           Data.Monoid
+import           Data.UUID
 import           System.IO
 import           Text.Parser.Char
 import           Text.Parser.Combinators
@@ -81,8 +82,17 @@ typeFunArrow = token $ reserved "->"
 typeFunParams :: Parser [Type]
 typeFunParams = parens $ commaSep typeExpr
 
+typeParam :: Parser TypeParam
+typeParam = TypeParam <$> identifier <*> pure nil
+
+typeParams :: Parser [TypeParam]
+typeParams = option [] $ brackets $ commaSep typeParam
+
 typeFun :: Parser Type
-typeFun = TFun <$> typeFunParams <*> (typeFunArrow *> typeExpr)
+typeFun = TFun <$> typeParams <*> typeFunParams <*> (typeFunArrow *> typeExpr)
+
+typeVar :: Parser Type
+typeVar = TVar <$> identifier
 
 typeExpr :: Parser Type
 typeExpr = choice [ typeUnit
@@ -91,6 +101,7 @@ typeExpr = choice [ typeUnit
                   , typeInt
                   , typeDouble
                   , typeFun
+                  , typeVar
                   ]
 
 -- Expressions
@@ -183,7 +194,7 @@ run = (token $ reserved ">") >> SRun <$> expression True <*> runParams
     runParams = many $ expression True
 
 deffun :: Parser Statement
-deffun = SDefFun <$> (defKeyword *> identifier) <*> paramDefs <*> retType <*> (collapse <$> body)
+deffun = SDefFun <$> (defKeyword *> identifier) <*> typeParams <*> paramDefs <*> retType <*> (collapse <$> body)
   where
     defKeyword = token $ reserved "def"
     endKeyword = token $ reserved "end"

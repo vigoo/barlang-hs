@@ -5,7 +5,7 @@
 + Nesting numeric and boolean expressions
   + subexprs must also return prereqs
   + refactor bool/int/double subexpr entry points to be reusable from each other
-- str()
+* str()
 - Auto inline
 - If
 - Closure

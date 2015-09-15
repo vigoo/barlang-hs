@@ -1,6 +1,7 @@
 import           Control.Applicative
 import           Control.Monad
 import           Data.Char
+import           Data.UUID
 import           System.Exit
 import           Test.QuickCheck
 import           Test.QuickCheck.Property
@@ -19,6 +20,9 @@ arbitrarySymbolName = listOf1 (arbitrary `suchThat` (\c -> isAscii c && isAlpha 
 arbitraryStringLiteral :: Gen SymbolName
 arbitraryStringLiteral = listOf $ arbitrary `suchThat` (\c -> isAscii c && (isAlpha c || c == ' ')) -- TODO
 
+instance Arbitrary TypeParam where
+  arbitrary = TypeParam <$> arbitrarySymbolName <*> pure nil
+
 instance Arbitrary Type where
   arbitrary = sized arbType
    where
@@ -28,22 +32,26 @@ instance Arbitrary Type where
                        , pure TBool
                        , pure TInt
                        , pure TDouble
+                       , TVar <$> arbitrarySymbolName
                        ]
      arbType n = oneof [ pure TUnit
                        , pure TString
                        , pure TBool
                        , pure TInt
                        , pure TDouble
+                       , TVar <$> arbitrarySymbolName
                        , do k <- choose (0, n-1)
                             l <- choose (0, n-1)
                             m <- choose (0, n-1)
                             args <- replicateM k $ arbType l
                             rettype <- arbType m
-                            return $ TFun args rettype
+                            tps <- arbitrary
+                            return $ TFun tps args rettype
                        ]
 
-  shrink (TFun args rettype) = [TFun args' rettype| args' <- shrink args] ++
-                               [TFun args rettype'| rettype' <- shrink rettype]
+  shrink (TFun tps args rettype) = [TFun tps args' rettype| args' <- shrink args] ++
+                                   [TFun tps args rettype'| rettype' <- shrink rettype] ++
+                                   [TFun tps' args rettype| tps' <- shrink tps]
   shrink _ = []
 
 instance Arbitrary Expression where
@@ -120,7 +128,7 @@ instance Arbitrary ParamDef where
 
 instance Arbitrary Statement where
   arbitrary = oneof [ SVarDecl <$> arbitrarySymbolName <*> arbitrary
-                    , SDefFun <$> arbitrarySymbolName <*> arbitrary <*> arbitrary <*> arbitrary
+                    , SDefFun <$> arbitrarySymbolName <*> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
                     , SSequence <$> (arbitrary `suchThat` (/= SNoOp)) <*> arbitrary
                     , SCall <$> arbitrary <*> arbitrary
                     , SRun <$> arbitrary <*> arbitrary
@@ -130,9 +138,9 @@ instance Arbitrary Statement where
 
   shrink (SVarDecl name expr) | (length name > 1) = [SVarDecl "x" expr]
                               | otherwise = [SVarDecl name expr' | expr' <- shrink expr]
-  shrink (SDefFun name ps rt body) | (length name > 1) = [SDefFun "f" ps rt body]
-                                   | (length ps > 1) = [SDefFun name ps' rt body | ps' <- shrink ps]
-                                   | otherwise = [SDefFun name ps rt' body' | rt' <- shrink rt, body' <- shrink body]
+  shrink (SDefFun name tps ps rt body) | (length name > 1) = [SDefFun "f" tps ps rt body]
+                                       | (length ps > 1) = [SDefFun name tps ps' rt body | ps' <- shrink ps]
+                                       | otherwise = [SDefFun name tps ps rt' body' | rt' <- shrink rt, body' <- shrink body]
   shrink (SSequence s1 s2) = shrink s1 ++
                              shrink s2 ++
                              [SSequence (SReturn (EIntLit 0)) s' | s' <- shrink s1] ++
@@ -169,7 +177,7 @@ instance ApproxEqProp Expression where
 
 instance ApproxEqProp SingleStatement where
   SSVarDecl n1 e1 ==~ SSVarDecl n2 e2 = n1 == n2 .&&. e1 ==~ e2
-  SSDefFun n1 ps1 t1 b1 ==~ SSDefFun n2 ps2 t2 b2 = n1 == n2 .&&. ps1 == ps2 .&&. t1 == t2 .&&. b1 ==~ b2
+  SSDefFun n1 tps1 ps1 t1 b1 ==~ SSDefFun n2 tps2 ps2 t2 b2 = n1 == n2 .&&. tps1 == tps2 .&&. ps1 == ps2 .&&. t1 == t2 .&&. b1 ==~ b2
   SSCall e1 e1s ==~ SSCall e2 e2s = e1 ==~ e2 .&&. conjoin (map (uncurry (==~)) (zip e1s e2s))
   SSRun e1 e1s ==~ SSRun e2 e2s = e1 ==~ e2 .&&. conjoin (map (uncurry (==~)) (zip e1s e2s))
   SSReturn e1 ==~ SSReturn e2 = e1 ==~ e2

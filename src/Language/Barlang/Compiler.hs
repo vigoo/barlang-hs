@@ -9,7 +9,7 @@
 module Language.Barlang.Compiler where
 
 import           Control.Applicative
-import           Control.Monad.Except
+import           Control.Monad.Error
 import           Control.Monad.State
 import           Control.Monad.Writer.Lazy
 import           Data.Binary.Builder
@@ -44,9 +44,13 @@ data CompilerError = InvalidFunctionContext
                    | InvalidTypesInNumericExpression [ExtendedType]
                    | EqualityUsedOnNonEqualTypes [ExtendedType]
                    | UnsupportedTypeInBooleanExpression ExtendedType
+                   | GeneralError String
                      deriving (Show)
 
-type CompilerMonad = ExceptT CompilerError (State Context)
+instance Error CompilerError where
+  strMsg = GeneralError
+
+type CompilerMonad = ErrorT CompilerError (State Context)
 
 data AssignedSymbol = AssignedSymbol { asName     :: SymbolName
                                      , asIdString :: B.ByteString
@@ -55,7 +59,7 @@ data AssignedSymbol = AssignedSymbol { asName     :: SymbolName
                     deriving (Show)
 
 data ExtendedType = SimpleType Type
-                  | TFunRef [Type] Type
+                  | TFunRef [TypeParam] [Type] Type
                   deriving (Show)
 
 class TypeEq a where
@@ -64,11 +68,14 @@ class TypeEq a where
 instance TypeEq Type where
   typeEq = (==)
 
+instance TypeEq TypeParam where
+  typeEq = (==)
+
 instance TypeEq ExtendedType where
   typeEq (SimpleType t1) (SimpleType t2) = t1 `typeEq` t2
-  typeEq (SimpleType (TFun ps1 t1)) (TFunRef ps2 t2) = ps1 `typeEq` ps2 && t1 `typeEq` t2
-  typeEq (TFunRef ps1 t1) (SimpleType (TFun ps2 t2)) = ps1 `typeEq` ps2 && t1 `typeEq` t2
-  typeEq (TFunRef ps1 t1) (TFunRef ps2 t2) = ps1 `typeEq` ps2 && t1 `typeEq` t2
+  typeEq (SimpleType (TFun tps1 ps1 t1)) (TFunRef tps2 ps2 t2) = tps1 `typeEq` tps2 && ps1 `typeEq` ps2 && t1 `typeEq` t2
+  typeEq (TFunRef tps1 ps1 t1) (SimpleType (TFun tps2 ps2 t2)) = tps1 `typeEq` tps2 && ps1 `typeEq` ps2 && t1 `typeEq` t2
+  typeEq (TFunRef tps1 ps1 t1) (TFunRef tps2 ps2 t2) = tps1 `typeEq` tps2 && ps1 `typeEq` ps2 && t1 `typeEq` t2
   typeEq _ _ = False
 
 instance (TypeEq a) => TypeEq [a] where
@@ -143,7 +150,7 @@ toBash st = mconcat [ fromByteString "#!/bin/bash\n"
 
 compileToString :: Script -> String
 compileToString script =
-    case (evalState (runExceptT $ compile script) initialContext) of
+    case (evalState (runErrorT $ compile script) initialContext) of
       Right st -> BL.toString $ toLazyByteString $ toBash st
       Left err -> error (show err)
 
@@ -152,7 +159,7 @@ compile Script{..} = do  _ <- typeCheckSt sStatement
                          compileSt sStatement
 
 runChildContext :: Context -> CompilerMonad a -> CompilerMonad a
-runChildContext ctx' f = let res = (evalState (runExceptT f) ctx')
+runChildContext ctx' f = let res = (evalState (runErrorT f) ctx')
                          in case res of
                               Right v -> return v
                               Left err -> throwError err
@@ -380,8 +387,8 @@ numericSubExpr expr = do
   where
     numericSubExpr' :: Expression -> Expression -> ExpressionCompilerMonad (Maybe BashExpression)
     numericSubExpr' a b = do
-      ta <- typeCheckExpr a
-      tb <- typeCheckExpr b
+      (!ta) <- typeCheckExpr a
+      (!tb) <- typeCheckExpr b
       case (ta, tb) of
        (SimpleType TDouble, _) -> subExpr doubleTempVar
        (_, SimpleType TDouble) -> subExpr doubleTempVar
@@ -405,7 +412,7 @@ compileExpr expr =
                 case r of
                   Just asym ->
                       case t of
-                        Just (SimpleType (TFun _ _)) -> return (SH.literal $ asIdString asym)
+                        Just (SimpleType (TFun _ _ _)) -> return (SH.literal $ asIdString asym)
                         _ ->  return (SH.ReadVar (SH.VarIdent $ asId asym))
                   Nothing -> throwError $ UndefinedSymbol sym
 
@@ -445,12 +452,13 @@ compileSt st =
                        compileExpression' expr compileExpr $
                          \cExpr -> return $ SH.Assign $ SH.Var (asId asym) cExpr
 
-      SDefFun sym pdef rettype stIn -> do
+      SDefFun sym tps pdef rettype stIn -> do
               r <- findSymbolM sym
               case r of
                 Just _ -> throwError $ SymbolAlreadyDefined sym
                 Nothing -> do
                        asym <- createIdentifierM sym
+                       -- TODO: add type params to context
                        funCtx <- funContextM sym pdef
                        cStIn <- runChildContext funCtx $ compileSt stIn
                        return $ SH.Function (SH.Simple $ asId asym) (noAnnotation $ withFunctionHeader funCtx pdef rettype cStIn)
@@ -499,10 +507,11 @@ typeCheckExpr expr =
           paramTypes <- mapM typeCheckExpr params
           fnType <- typeCheckExpr funRefExpr
           case fnType of
-            SimpleType (TFun expectedTypes retType) | (map SimpleType expectedTypes) `typeEq` paramTypes -> return $ SimpleType retType
-                                                    | otherwise -> throwError $ InvalidParameterTypes funName expectedTypes paramTypes
-            TFunRef expectedTypes retType | (map SimpleType expectedTypes) `typeEq` paramTypes -> return $ SimpleType retType
-                                          | otherwise -> throwError $ InvalidParameterTypes funName expectedTypes paramTypes
+           -- TODO: unify type parameters with inferred types, fail if cannot be inferred or if ambigous
+            SimpleType (TFun tps expectedTypes retType) | (map SimpleType expectedTypes) `typeEq` paramTypes -> return $ SimpleType retType
+                                                        | otherwise -> throwError $ InvalidParameterTypes funName expectedTypes paramTypes
+            TFunRef tps expectedTypes retType | (map SimpleType expectedTypes) `typeEq` paramTypes -> return $ SimpleType retType
+                                              | otherwise -> throwError $ InvalidParameterTypes funName expectedTypes paramTypes
             _ -> throwError $ SymbolNotBoundToFunction funName
 
       ENot e -> do
@@ -552,11 +561,11 @@ typeCheckExpr expr =
        True -> return $ SimpleType TBool
        False -> throwError $ EqualityUsedOnNonEqualTypes [t1, t2]
 
-funType :: [ParamDef] -> Type -> Type
-funType params rettype = TFun (map (\case { ParamDef (_, t) -> t }) params) rettype
+funType :: [TypeParam] -> [ParamDef] -> Type -> Type
+funType tps params rettype = TFun tps (map (\case { ParamDef (_, t) -> t }) params) rettype
 
 funToFunRef :: Type -> ExtendedType
-funToFunRef (TFun ps t) = TFunRef ps t
+funToFunRef (TFun tps ps t) = TFunRef tps ps t
 funToFunRef t = SimpleType t
 
 funScope :: Scope -> SymbolName -> Scope
@@ -582,8 +591,9 @@ typeCheckSt st =
           storeTypeM sym typ
           return $ SimpleType TUnit
 
-      SDefFun sym pdef rettype stIn -> do
-          storeTypeM sym (SimpleType $ funType pdef rettype)
+      SDefFun sym tps pdef rettype stIn -> do
+          storeTypeM sym (SimpleType $ funType tps pdef rettype)
+          -- TODO: add type params to context
           funCtx <- funContextM sym pdef
           (!sttype) <- runChildContext funCtx $ typeCheckSt stIn
           if sttype `typeEq` (SimpleType rettype)
