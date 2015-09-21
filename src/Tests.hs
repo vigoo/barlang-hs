@@ -21,7 +21,7 @@ arbitraryStringLiteral :: Gen SymbolName
 arbitraryStringLiteral = listOf $ arbitrary `suchThat` (\c -> isAscii c && (isAlpha c || c == ' ')) -- TODO
 
 instance Arbitrary TypeParam where
-  arbitrary = TypeParam <$> arbitrarySymbolName <*> pure nil
+  arbitrary = TypeParam <$> arbitrarySymbolName
 
 instance Arbitrary Type where
   arbitrary = sized arbType

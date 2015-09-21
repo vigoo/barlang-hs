@@ -28,7 +28,7 @@ parensIfNotVar expr = case expr of
   _ -> parenthesis (code expr)
 
 instance Codeable TypeParam where
-  code (TypeParam sym _) = code sym
+  code (TypeParam sym) = code sym
 
 instance Codeable Type where
     code = \case

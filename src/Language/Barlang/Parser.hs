@@ -83,7 +83,7 @@ typeFunParams :: Parser [Type]
 typeFunParams = parens $ commaSep typeExpr
 
 typeParam :: Parser TypeParam
-typeParam = TypeParam <$> identifier <*> pure nil
+typeParam = TypeParam <$> identifier
 
 typeParams :: Parser [TypeParam]
 typeParams = option [] $ brackets $ commaSep typeParam

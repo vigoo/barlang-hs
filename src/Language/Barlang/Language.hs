@@ -1,10 +1,8 @@
 module Language.Barlang.Language where
 
-import           Data.UUID
-
 type SymbolName = String
 
-data TypeParam = TypeParam SymbolName UUID
+data TypeParam = TypeParam SymbolName
                deriving (Show, Eq)
 
 data Type = TUnit
@@ -22,6 +20,7 @@ data Expression = EStringLit String
                 | EDoubleLit Double
                 | EVar SymbolName
                 | ESysVar SymbolName
+                | EPredefined SymbolName
                 | EApply Expression [Expression]
                 | EAnd Expression Expression
                 | EOr Expression Expression

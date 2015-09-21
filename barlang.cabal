@@ -19,9 +19,11 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Language.Barlang.Compiler
+                     , Language.Barlang.CompilerTypes
                      , Language.Barlang.Language
                      , Language.Barlang.Parser
                      , Language.Barlang.PrettyPrint
+                     , Language.Barlang.Predefined
 
   build-depends:       base >=4.7 && <4.8
                      , bash ==0.1.*

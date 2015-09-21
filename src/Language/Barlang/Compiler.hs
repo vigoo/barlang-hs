@@ -18,49 +18,17 @@ import qualified Data.ByteString.UTF8        as B
 import qualified Data.Map                    as Map
 import           Data.Maybe
 import           Data.Monoid
+import qualified Data.Set                    as Set
 import           Debug.Trace
+import           Language.Barlang.CompilerTypes
 import           Language.Barlang.Language
+import           Language.Barlang.Predefined
 import qualified Language.Bash               as SH
 import qualified Language.Bash.Annotations   as SH
 import qualified Language.Bash.PrettyPrinter as SHPP
 import qualified Language.Bash.Syntax        as SH
 import           Text.Printf
 import           Text.ShellEscape
-
-type Scope = String
-type BashStatement = SH.Statement SH.Lines
-type BashExpression = SH.Expression SH.Lines
-
-data CompilerError = InvalidFunctionContext
-                   | UndefinedSymbol SymbolName
-                   | NotSupported String
-                   | SymbolAlreadyDefined SymbolName
-                   | CannotInferType SymbolName
-                   | SymbolNotBoundToFunction SymbolName
-                   | InvalidParameterTypes SymbolName [Type] [ExtendedType]
-                   | InvalidReturnType SymbolName Type ExtendedType
-                   | InvalidParametersForRunStatement
-                   | InvalidBooleanExpression (Maybe Expression)
-                   | InvalidTypesInNumericExpression [ExtendedType]
-                   | EqualityUsedOnNonEqualTypes [ExtendedType]
-                   | UnsupportedTypeInBooleanExpression ExtendedType
-                   | GeneralError String
-                     deriving (Show)
-
-instance Error CompilerError where
-  strMsg = GeneralError
-
-type CompilerMonad = ErrorT CompilerError (State Context)
-
-data AssignedSymbol = AssignedSymbol { asName     :: SymbolName
-                                     , asIdString :: B.ByteString
-                                     , asId       :: SH.Identifier
-                                     }
-                    deriving (Show)
-
-data ExtendedType = SimpleType Type
-                  | TFunRef [TypeParam] [Type] Type
-                  deriving (Show)
 
 class TypeEq a where
   typeEq :: a -> a -> Bool
@@ -83,31 +51,6 @@ instance (TypeEq a) => TypeEq [a] where
   typeEq (_:_) [] = False
   typeEq [] (_:_) = False
   typeEq (x:xs) (y:ys) = x `typeEq` y && xs `typeEq` ys
-
-data Context = Context { ctxScope       :: Scope
-                       , ctxSymbols     :: Map.Map SymbolName AssignedSymbol
-                       , ctxSymbolTypes :: Map.Map SymbolName ExtendedType
-                       , ctxLastTmp     :: Int
-                       }
-             deriving (Show)
-
-type ExpressionCompilerMonad = WriterT (CompilerMonad BashStatement) CompilerMonad
-
-prereq :: CompilerMonad BashStatement -> ExpressionCompilerMonad ()
-prereq = tell
-
-noPrereq :: CompilerMonad BashStatement
-noPrereq = return SH.Empty
-
-mergeStatements :: CompilerMonad BashStatement -> CompilerMonad BashStatement -> CompilerMonad BashStatement
-mergeStatements ma mb = do
-  a <- ma
-  b <- mb
-  return $ SH.Sequence (noAnnotation a) (noAnnotation b)
-
-instance Monoid (CompilerMonad BashStatement) where
-  mappend = mergeStatements
-  mempty = noPrereq
 
 compileExpression :: (Expression -> ExpressionCompilerMonad BashExpression)
                   -> (BashExpression -> CompilerMonad BashStatement)
@@ -155,8 +98,37 @@ compileToString script =
       Left err -> error (show err)
 
 compile :: Script -> CompilerMonad BashStatement
-compile Script{..} = do  _ <- typeCheckSt sStatement
-                         compileSt sStatement
+compile Script{..} = do  let replacedSt = replacePredefs sStatement
+                         _ <- trace "type checking..." $ typeCheckSt replacedSt -- TODO: remove trace, add proper logging
+                         trace "compiling..." $ compileSt replacedSt
+
+replacePredefs :: Statement -> Statement
+replacePredefs (SVarDecl n x) = SVarDecl n (replacePredefsExpr x)
+replacePredefs (SDefFun n tps ps rt st) = SDefFun n tps ps rt (replacePredefs st)
+replacePredefs (SSequence s1 s2) = SSequence (replacePredefs s1) (replacePredefs s2)
+replacePredefs (SCall e0 es) = SCall (replacePredefsExpr e0) (map replacePredefsExpr es)
+replacePredefs (SRun e0 es) = SRun (replacePredefsExpr e0) (map replacePredefsExpr es)
+replacePredefs (SReturn e) = SReturn (replacePredefsExpr e)
+replacePredefs SNoOp = SNoOp
+
+replacePredefsExpr :: Expression -> Expression
+replacePredefsExpr (EVar n) | (n `Map.member` predefined) =
+  EPredefined n
+replacePredefsExpr (EApply e0 es) = EApply (replacePredefsExpr e0) (map replacePredefsExpr es)
+replacePredefsExpr (ENot e) = ENot (replacePredefsExpr e)
+replacePredefsExpr (EAnd a b) = EAnd (replacePredefsExpr a) (replacePredefsExpr b)
+replacePredefsExpr (EOr a b) = EOr (replacePredefsExpr a) (replacePredefsExpr b)
+replacePredefsExpr (EAdd a b) = EAdd (replacePredefsExpr a) (replacePredefsExpr b)
+replacePredefsExpr (ESub a b) = ESub (replacePredefsExpr a) (replacePredefsExpr b)
+replacePredefsExpr (EMul a b) = EMul (replacePredefsExpr a) (replacePredefsExpr b)
+replacePredefsExpr (EDiv a b) = EDiv (replacePredefsExpr a) (replacePredefsExpr b)
+replacePredefsExpr (EEq a b) = EEq (replacePredefsExpr a) (replacePredefsExpr b)
+replacePredefsExpr (ENeq a b) = ENeq (replacePredefsExpr a) (replacePredefsExpr b)
+replacePredefsExpr (ELess a b) = ELess (replacePredefsExpr a) (replacePredefsExpr b)
+replacePredefsExpr (ELessEq a b) = ELessEq (replacePredefsExpr a) (replacePredefsExpr b)
+replacePredefsExpr (EGreater a b) = EGreater (replacePredefsExpr a) (replacePredefsExpr b)
+replacePredefsExpr (EGreaterEq a b) = EGreaterEq (replacePredefsExpr a) (replacePredefsExpr b)
+replacePredefsExpr e = e
 
 runChildContext :: Context -> CompilerMonad a -> CompilerMonad a
 runChildContext ctx' f = let res = (evalState (runErrorT f) ctx')
@@ -164,13 +136,10 @@ runChildContext ctx' f = let res = (evalState (runErrorT f) ctx')
                               Right v -> return v
                               Left err -> throwError err
 
-noAnnotation :: BashStatement -> SH.Annotated SH.Lines
-noAnnotation = SH.Annotated (SH.Lines [] [])
-
 initialContext :: Context
-initialContext = Context { ctxScope = "_"
+initialContext = Context { ctxScope = ""
                          , ctxSymbols = Map.empty
-                         , ctxSymbolTypes = Map.empty
+                         , ctxSymbolTypes = (SimpleType . predefType) `Map.map` predefined
                          , ctxLastTmp = 0
                          }
 
@@ -198,24 +167,6 @@ createIdentifierM sym = do
   let (ctx', asym) = createIdentifier ctx sym
   put ctx'
   return asym
-
-storeType :: Context -> SymbolName -> ExtendedType -> Context
-storeType ctx@Context{..} sym typ = ctx { ctxSymbolTypes = Map.insert sym typ ctxSymbolTypes }
-
-storeTypeM :: (MonadState Context m) => SymbolName -> ExtendedType -> m ()
-storeTypeM sym typ = modify (\ctx -> storeType ctx sym typ)
-
-findSymbol :: Context -> SymbolName -> Maybe AssignedSymbol
-findSymbol Context{..} sym = Map.lookup sym ctxSymbols
-
-findSymbolM :: (MonadState Context m) => SymbolName -> m (Maybe AssignedSymbol)
-findSymbolM sym = gets $ \ctx -> findSymbol ctx sym
-
-findType :: Context -> SymbolName -> Maybe ExtendedType
-findType Context{..} sym = Map.lookup sym ctxSymbolTypes
-
-findTypeM :: (MonadState Context m) => SymbolName -> m (Maybe ExtendedType)
-findTypeM sym = gets $ \ctx -> findType ctx sym
 
 generateTmpSym :: (MonadState Context m) => m AssignedSymbol
 generateTmpSym = do
@@ -416,7 +367,22 @@ compileExpr expr =
                         _ ->  return (SH.ReadVar (SH.VarIdent $ asId asym))
                   Nothing -> throwError $ UndefinedSymbol sym
 
+      EPredefined sym -> do
+        case (Map.lookup sym predefined) of
+          Just (PredefinedValue{..}) -> do
+            case predefValue of
+              PredefinedExpression e -> compileExpr e
+              CustomExpression fn -> throwError $ InvalidUseOfPredefinedFunction sym
+          Nothing -> throwError $ UndefinedSymbol sym
+
       ESysVar sym -> return $ SH.ReadVar (SH.VarIdent ((SH.Identifier . B.fromString) sym))
+
+      EApply (EPredefined sym) params | isCustomPredefinedExpression sym -> do
+        case (predefValue (predefined Map.! sym)) of
+          CustomExpression fn -> do
+            paramTypes <- mapM typeCheckExpr params
+            fn $ map (uncurry TypedExpression) (zip paramTypes params)
+          _ -> throwError $ GeneralError "Impossible state (isCustomPredefinedExpression failure)"
 
       EApply funRefExpr params -> do
                 funRef <- compileExpr funRefExpr
@@ -483,6 +449,30 @@ compileSt st =
         compileExpression' program compileExpr $ \cProgram -> do
           compileExpressions' params compileExpr $ \cParams -> return $ SH.SimpleCommand cProgram cParams
 
+unifyTypeVars :: (MonadState Context m, MonadError CompilerError m) => [TypeParam] -> [ExtendedType] -> [Type] -> m (Map.Map SymbolName Type)
+unifyTypeVars typeParams actualTypes typeDefs = do
+  let typeVarNames = Set.fromList $ map (\(TypeParam n) -> n) typeParams
+  let pairs = zip actualTypes typeDefs
+  let mappings = catMaybes $ map (findTypeMapping typeVarNames) pairs
+  -- TODO: error on ambiguous mapping
+  return $ Map.fromList mappings
+
+  where
+    findTypeMapping typeVarNames ((SimpleType actual), (TVar n)) | n `Set.member` typeVarNames =
+      Just (n, actual)
+    findTypeMapping _ _ =
+      Nothing
+
+appliedType :: (Map.Map SymbolName Type) -> Type -> Type
+appliedType mapping (TVar n) | n `Map.member` mapping =
+  mapping Map.! n
+appliedType mapping (TFun tps ps r) =
+  TFun tps (map (appliedType mapping) ps) (appliedType mapping r)
+appliedType _ t = t
+
+appliedExtType :: (Map.Map SymbolName Type) -> Type -> ExtendedType
+appliedExtType mapping t = SimpleType $ appliedType mapping t
+
 typeCheckExpr :: (MonadState Context m, MonadError CompilerError m) => Expression -> m ExtendedType
 typeCheckExpr expr =
     case expr of
@@ -500,18 +490,28 @@ typeCheckExpr expr =
                   Just typ -> return typ
                   Nothing -> throwError $ CannotInferType sym
 
+      EPredefined sym -> do
+        case (Map.lookup sym predefined) of
+          Just (PredefinedValue{..}) -> return $ SimpleType predefType
+          Nothing -> throwError $ CannotInferType sym
+
       ESysVar _ -> return $ SimpleType TString
 
       EApply funRefExpr params -> do
-          let funName = (show funRefExpr)
+          let funName = trace ("funRefExpr: " <> show funRefExpr <> "; params: " <> show params) $ (show funRefExpr)
           paramTypes <- mapM typeCheckExpr params
           fnType <- typeCheckExpr funRefExpr
           case fnType of
-           -- TODO: unify type parameters with inferred types, fail if cannot be inferred or if ambigous
-            SimpleType (TFun tps expectedTypes retType) | (map SimpleType expectedTypes) `typeEq` paramTypes -> return $ SimpleType retType
-                                                        | otherwise -> throwError $ InvalidParameterTypes funName expectedTypes paramTypes
-            TFunRef tps expectedTypes retType | (map SimpleType expectedTypes) `typeEq` paramTypes -> return $ SimpleType retType
-                                              | otherwise -> throwError $ InvalidParameterTypes funName expectedTypes paramTypes
+            SimpleType (TFun tps expectedTypes retType) -> do
+              typeVarMapping <- unifyTypeVars tps paramTypes expectedTypes
+              case (map (appliedExtType typeVarMapping) expectedTypes) `typeEq` paramTypes of
+                True -> return $ appliedExtType typeVarMapping retType
+                False -> throwError $ InvalidParameterTypes funName expectedTypes paramTypes
+            TFunRef tps expectedTypes retType -> do
+              typeVarMapping <- unifyTypeVars tps paramTypes expectedTypes
+              case (map (appliedExtType typeVarMapping) expectedTypes) `typeEq` paramTypes of
+                True -> return $ appliedExtType typeVarMapping retType
+                False -> throwError $ InvalidParameterTypes funName expectedTypes paramTypes
             _ -> throwError $ SymbolNotBoundToFunction funName
 
       ENot e -> do
@@ -615,4 +615,4 @@ typeCheckSt st =
           typParams <- mapM typeCheckExpr params
           if (typProgram `typeEq` (SimpleType TString)) && all (\t -> t `typeEq` (SimpleType TString)) typParams
           then return $ SimpleType TUnit -- TODO
-          else throwError InvalidParametersForRunStatement
+          else (trace $ "program: " <> show program <> "params: " <> show params) $ throwError InvalidParametersForRunStatement
