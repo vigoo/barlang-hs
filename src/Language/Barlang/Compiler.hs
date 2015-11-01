@@ -9,12 +9,13 @@
 module Language.Barlang.Compiler where
 
 import           Control.Applicative
-import           Control.Monad.Error
+import           Control.Monad.Except
 import           Control.Monad.State
 import           Control.Monad.Writer.Lazy
 import           Data.Binary.Builder
 import qualified Data.ByteString.Lazy.UTF8   as BL
 import qualified Data.ByteString.UTF8        as B
+import           Data.Function
 import qualified Data.Map                    as Map
 import           Data.Maybe
 import           Data.Monoid
@@ -93,7 +94,7 @@ toBash st = mconcat [ fromByteString "#!/bin/bash\n"
 
 compileToString :: Script -> String
 compileToString script =
-    case (evalState (runErrorT $ compile script) initialContext) of
+    case evalState (runExceptT $ compile script) initialContext of
       Right st -> BL.toString $ toLazyByteString $ toBash st
       Left err -> error (show err)
 
@@ -112,7 +113,7 @@ replacePredefs (SReturn e) = SReturn (replacePredefsExpr e)
 replacePredefs SNoOp = SNoOp
 
 replacePredefsExpr :: Expression -> Expression
-replacePredefsExpr (EVar n) | (n `Map.member` predefined) =
+replacePredefsExpr (EVar n) | n `Map.member` predefined =
   EPredefined n
 replacePredefsExpr (EApply e0 es) = EApply (replacePredefsExpr e0) (map replacePredefsExpr es)
 replacePredefsExpr (ENot e) = ENot (replacePredefsExpr e)
@@ -131,7 +132,7 @@ replacePredefsExpr (EGreaterEq a b) = EGreaterEq (replacePredefsExpr a) (replace
 replacePredefsExpr e = e
 
 runChildContext :: Context -> CompilerMonad a -> CompilerMonad a
-runChildContext ctx' f = let res = (evalState (runErrorT f) ctx')
+runChildContext ctx' f = let res = evalState (runExceptT f) ctx'
                          in case res of
                               Right v -> return v
                               Left err -> throwError err
@@ -159,7 +160,7 @@ createIdentifier :: Context -> SymbolName -> (Context, AssignedSymbol)
 createIdentifier ctx@Context{..} sym = (ctx { ctxSymbols = Map.insert sym asym ctxSymbols }, asym)
     where
       idString = B.fromString $ printf "%s_%s" ctxScope sym
-      asym = AssignedSymbol sym idString $ (SH.Identifier idString)
+      asym = AssignedSymbol sym idString $ SH.Identifier idString
 
 createIdentifierM :: SymbolName -> CompilerMonad AssignedSymbol
 createIdentifierM sym = do
@@ -171,7 +172,7 @@ createIdentifierM sym = do
 generateTmpSym :: (MonadState Context m) => m AssignedSymbol
 generateTmpSym = do
   ctx <- get
-  let next = 1 + (ctxLastTmp ctx)
+  let next = 1 + ctxLastTmp ctx
       idString = B.fromString $ printf "%s_tmp%d" (ctxScope ctx) next
   put $ ctx { ctxLastTmp = next }
   return $ AssignedSymbol (printf "tmp%d" next) idString $ SH.Identifier idString
@@ -183,13 +184,13 @@ withFunctionHeader ctx@Context{..} params rettype stIn = SH.Sequence (noAnnotati
       paramCount = length params
       assignParam :: SymbolName -> Int -> BashStatement
       assignParam n i = case findSymbol ctx n of
-                          Just asym -> SH.Local $ SH.Var (asId asym) (SH.ReadVar $ SH.VarSpecial . fromJust . SH.specialVar $ B.fromString ("$" ++ (show i)))
+                          Just asym -> SH.Local $ SH.Var (asId asym) (SH.ReadVar $ SH.VarSpecial . fromJust . SH.specialVar $ B.fromString ("$" ++ show i))
                           Nothing -> error "Function context is not initialized properly"
       declRetVar = if rettype == TUnit
                    then SH.Empty
-                   else SH.Local $ SH.Var (retVarId ctx) $ (SH.ReadVar $ SH.VarSpecial SH.Dollar1)
+                   else SH.Local $ SH.Var (retVarId ctx) $ SH.ReadVar $ SH.VarSpecial SH.Dollar1
       decls = map (\case { (ParamDef (n, _), i) -> assignParam n i }) (params `zip` [startIdx..(startIdx+paramCount-1)])
-      funHeader = foldl (\s1 s2 -> SH.Sequence (noAnnotation s1) (noAnnotation s2)) declRetVar decls
+      funHeader = foldl (SH.Sequence `on` noAnnotation) declRetVar decls
 
 compileTestExpr :: Expression -> ExpressionCompilerMonad B.ByteString
 compileTestExpr = \case
@@ -229,7 +230,7 @@ compileTestExpr = \case
        Just (SH.ReadVar (SH.VarIdent (SH.Identifier tmpSymId))) ->
          return $ "\"" <> (B.fromString $ show tmpSymId) <> "\""
        Just (SH.Literal l) ->
-         return $ "\"" <> (unescape l) <> "\""
+         return $ "\"" <> unescape l <> "\""
        _ -> throwError $ InvalidBooleanExpression $ Just e
   where
     binaryTestExpr a b op = do
@@ -286,7 +287,7 @@ integerTempVar :: Expression -> ExpressionCompilerMonad AssignedSymbol
 integerTempVar expr = do
   numExpr <- compileIntegerExpr expr
   tmpSym <- generateTmpSym
-  prereq $ return $ SH.Sequence (SH.Annotated (SH.Lines [(asIdString tmpSym) <> "=$((" <> numExpr <> "))"] []) SH.Empty) (noAnnotation SH.Empty)
+  prereq $ return $ SH.Sequence (SH.Annotated (SH.Lines [asIdString tmpSym <> "=$((" <> numExpr <> "))"] []) SH.Empty) (noAnnotation SH.Empty)
   return tmpSym
 
 compileDoubleExpr :: Expression -> ExpressionCompilerMonad B.ByteString
@@ -312,7 +313,7 @@ doubleTempVar expr = do
   return tmpSym
 
 boolSubExpr :: Expression -> ExpressionCompilerMonad (Maybe BashExpression)
-boolSubExpr expr = do
+boolSubExpr expr =
     case expr of
       EAnd _ _ -> boolSubExpr'
       EOr _ _ -> boolSubExpr'
@@ -326,7 +327,7 @@ boolSubExpr expr = do
       return $ Just (SH.ReadVar (SH.VarIdent $ asId tmpSym))
 
 numericSubExpr :: Expression -> ExpressionCompilerMonad (Maybe BashExpression)
-numericSubExpr expr = do
+numericSubExpr expr =
     case expr of
       EAdd a b -> numericSubExpr' a b
       ESub a b -> numericSubExpr' a b
@@ -363,13 +364,13 @@ compileExpr expr =
                 case r of
                   Just asym ->
                       case t of
-                        Just (SimpleType (TFun _ _ _)) -> return (SH.literal $ asIdString asym)
+                        Just (SimpleType (TFun{})) -> return (SH.literal $ asIdString asym)
                         _ ->  return (SH.ReadVar (SH.VarIdent $ asId asym))
                   Nothing -> throwError $ UndefinedSymbol sym
 
-      EPredefined sym -> do
-        case (Map.lookup sym predefined) of
-          Just (PredefinedValue{..}) -> do
+      EPredefined sym ->
+        case Map.lookup sym predefined of
+          Just (PredefinedValue{..}) ->
             case predefValue of
               PredefinedExpression e -> compileExpr e
               CustomExpression fn -> throwError $ InvalidUseOfPredefinedFunction sym
@@ -377,11 +378,11 @@ compileExpr expr =
 
       ESysVar sym -> return $ SH.ReadVar (SH.VarIdent ((SH.Identifier . B.fromString) sym))
 
-      EApply (EPredefined sym) params | isCustomPredefinedExpression sym -> do
-        case (predefValue (predefined Map.! sym)) of
+      EApply (EPredefined sym) params | isCustomPredefinedExpression sym ->
+        case predefValue (predefined Map.! sym) of
           CustomExpression fn -> do
             paramTypes <- mapM typeCheckExpr params
-            fn $ map (uncurry TypedExpression) (zip paramTypes params)
+            fn $ zipWith TypedExpression paramTypes params
           _ -> throwError $ GeneralError "Impossible state (isCustomPredefinedExpression failure)"
 
       EApply funRefExpr params -> do
@@ -434,19 +435,19 @@ compileSt st =
               t2 <- compileSt s2
               return $ SH.Sequence (noAnnotation t1) (noAnnotation t2)
 
-      SCall funRefExpr params -> do
-        compileExpression' funRefExpr compileExpr $ \funRef -> do
+      SCall funRefExpr params ->
+        compileExpression' funRefExpr compileExpr $ \funRef ->
           compileExpressions' params compileExpr $ \cParams -> return $ SH.SimpleCommand funRef cParams
 
-      SReturn expr -> do
+      SReturn expr ->
         compileExpression' expr compileExpr $ \cExpr -> do
           ctx <- get
           let setRetVal = SH.Local (SH.Var (retValId ctx) cExpr)
               passToCaller = B.fromString $ printf "eval $%s=\"$%s\"" (retVarName ctx) (retValName ctx)
           return $ SH.Sequence (SH.Annotated (SH.Lines [] [passToCaller]) setRetVal) (noAnnotation SH.Empty)
 
-      SRun program params -> do
-        compileExpression' program compileExpr $ \cProgram -> do
+      SRun program params ->
+        compileExpression' program compileExpr $ \cProgram ->
           compileExpressions' params compileExpr $ \cParams -> return $ SH.SimpleCommand cProgram cParams
 
 unifyTypeVars :: (MonadState Context m, MonadError CompilerError m) => [TypeParam] -> [ExtendedType] -> [Type] -> m (Map.Map SymbolName Type)
@@ -463,14 +464,14 @@ unifyTypeVars typeParams actualTypes typeDefs = do
     findTypeMapping _ _ =
       Nothing
 
-appliedType :: (Map.Map SymbolName Type) -> Type -> Type
+appliedType :: Map.Map SymbolName Type -> Type -> Type
 appliedType mapping (TVar n) | n `Map.member` mapping =
   mapping Map.! n
 appliedType mapping (TFun tps ps r) =
   TFun tps (map (appliedType mapping) ps) (appliedType mapping r)
 appliedType _ t = t
 
-appliedExtType :: (Map.Map SymbolName Type) -> Type -> ExtendedType
+appliedExtType :: Map.Map SymbolName Type -> Type -> ExtendedType
 appliedExtType mapping t = SimpleType $ appliedType mapping t
 
 typeCheckExpr :: (MonadState Context m, MonadError CompilerError m) => Expression -> m ExtendedType
@@ -490,15 +491,15 @@ typeCheckExpr expr =
                   Just typ -> return typ
                   Nothing -> throwError $ CannotInferType sym
 
-      EPredefined sym -> do
-        case (Map.lookup sym predefined) of
+      EPredefined sym ->
+        case Map.lookup sym predefined of
           Just (PredefinedValue{..}) -> return $ SimpleType predefType
           Nothing -> throwError $ CannotInferType sym
 
       ESysVar _ -> return $ SimpleType TString
 
       EApply funRefExpr params -> do
-          let funName = trace ("funRefExpr: " <> show funRefExpr <> "; params: " <> show params) $ (show funRefExpr)
+          let funName = trace ("funRefExpr: " <> show funRefExpr <> "; params: " <> show params) $ show funRefExpr
           paramTypes <- mapM typeCheckExpr params
           fnType <- typeCheckExpr funRefExpr
           case fnType of
@@ -596,7 +597,7 @@ typeCheckSt st =
           -- TODO: add type params to context
           funCtx <- funContextM sym pdef
           (!sttype) <- runChildContext funCtx $ typeCheckSt stIn
-          if sttype `typeEq` (SimpleType rettype)
+          if sttype `typeEq` SimpleType rettype
           then return $ SimpleType TUnit
           else throwError $ InvalidReturnType sym rettype sttype
 
@@ -613,6 +614,6 @@ typeCheckSt st =
       SRun program params -> do
           (!typProgram) <- typeCheckExpr program
           typParams <- mapM typeCheckExpr params
-          if (typProgram `typeEq` (SimpleType TString)) && all (\t -> t `typeEq` (SimpleType TString)) typParams
+          if (typProgram `typeEq` SimpleType TString) && all (\t -> t `typeEq` SimpleType TString) typParams
           then return $ SimpleType TUnit -- TODO
           else (trace $ "program: " <> show program <> "params: " <> show params) $ throwError InvalidParametersForRunStatement
