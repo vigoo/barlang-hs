@@ -6,8 +6,8 @@
   + subexprs must also return prereqs
   + refactor bool/int/double subexpr entry points to be reusable from each other
 + str()
-* Auto inline
-- If
++ Auto inline
+* If
 - better str()
 - Closure
 - Process
