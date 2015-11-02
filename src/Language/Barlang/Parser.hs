@@ -9,8 +9,10 @@ module Language.Barlang.Parser ( parseType
        where
 
 import           Control.Applicative
+import           Control.Monad
 import           Control.Monad.IO.Class
 import qualified Data.HashSet                 as HashSet
+import           Data.Maybe
 import           Data.Monoid
 import           Data.UUID
 import           System.IO
@@ -41,6 +43,7 @@ idStyle = emptyIdents { _styleReserved = set [ "string"
                                              , "def"
                                              , ":"
                                              , "end"
+                                             , "inline"
                                              , "true"
                                              , "false"
                                              , "and"
@@ -194,8 +197,11 @@ run = (token $ reserved ">") >> SRun <$> expression True <*> runParams
     runParams = many $ expression True
 
 deffun :: Parser Statement
-deffun = SDefFun <$> (defKeyword *> identifier) <*> typeParams <*> paramDefs <*> retType <*> (collapse <$> body)
+deffun = inlineKeyword >>= \inline ->
+  SDefFun <$> (defKeyword *> identifier) <*> pure (defaultFunProps { fpInline = inline }) <*> typeParams <*> paramDefs <*> retType <*> (collapse <$> body)
+
   where
+    inlineKeyword = liftM (fromMaybe False) $ (optional ((token $ reserved "inline") >> return True))
     defKeyword = token $ reserved "def"
     endKeyword = token $ reserved "end"
     typSepSym = token $ reserved ":"

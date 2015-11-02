@@ -40,8 +40,15 @@ data Expression = EStringLit String
 newtype ParamDef = ParamDef (SymbolName, Type)
     deriving (Show, Eq)
 
+data FunProps = FunProps { fpInline :: Bool }
+                deriving (Show, Eq)
+
+defaultFunProps :: FunProps
+defaultFunProps =
+  FunProps { fpInline = False }
+
 data SingleStatement = SSVarDecl SymbolName Expression
-                     | SSDefFun SymbolName [TypeParam] [ParamDef] Type Statement
+                     | SSDefFun SymbolName FunProps [TypeParam] [ParamDef] Type Statement
                      | SSCall Expression [Expression]
                      | SSRun Expression [Expression] -- TODO: this should be an expression returning a process value
                      | SSReturn Expression
@@ -49,7 +56,7 @@ data SingleStatement = SSVarDecl SymbolName Expression
 
 
 data Statement = SVarDecl SymbolName Expression
-               | SDefFun SymbolName [TypeParam] [ParamDef] Type Statement
+               | SDefFun SymbolName FunProps [TypeParam] [ParamDef] Type Statement
                | SSequence Statement Statement
                | SCall Expression [Expression]
                | SRun Expression [Expression] -- TODO: this should be an expression returning a process value
@@ -59,7 +66,7 @@ data Statement = SVarDecl SymbolName Expression
 
 normalize :: Statement -> [SingleStatement]
 normalize (SVarDecl s e) = [SSVarDecl s e]
-normalize (SDefFun s tp p t b) = [SSDefFun s tp p t b]
+normalize (SDefFun s props tp p t b) = [SSDefFun s props tp p t b]
 normalize (SCall n p) = [SSCall n p]
 normalize (SRun n p) = [SSRun n p]
 normalize (SReturn e) = [SSReturn e]

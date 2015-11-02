@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE RecordWildCards   #-}
 
 module Language.Barlang.PrettyPrint(PrettyPrint(..)
                                ,escape
@@ -76,8 +77,12 @@ instance Codeable ParamDef where
 instance Codeable Statement where
     code = \case
              SVarDecl sym expr ->  "val" <++> sym <++> "=" <++> expr <+> ";"
-             SDefFun sym tps pdefs rett body -> ("def" <++> symWithTps <+> parenthesis (interleave ", " (codeList pdefs)) <+> ":" <++> rett) <-> indent 4 body <-> "end;"
+             SDefFun sym (FunProps{..}) tps pdefs rett body -> (prefix <++> "def" <++> symWithTps <+> parenthesis (interleave ", " (codeList pdefs)) <+> ":" <++> rett) <-> indent 4 body <-> "end;"
                where
+                 prefix =
+                   if fpInline
+                   then code "inline"
+                   else noCode
                  symWithTps = case tps of
                    [] -> code sym
                    _ -> sym <+> square (interleave ", " (codeList tps))

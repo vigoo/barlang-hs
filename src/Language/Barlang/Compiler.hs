@@ -105,7 +105,7 @@ compile Script{..} = do  let replacedSt = replacePredefs sStatement
 
 replacePredefs :: Statement -> Statement
 replacePredefs (SVarDecl n x) = SVarDecl n (replacePredefsExpr x)
-replacePredefs (SDefFun n tps ps rt st) = SDefFun n tps ps rt (replacePredefs st)
+replacePredefs (SDefFun n props tps ps rt st) = SDefFun n props tps ps rt (replacePredefs st)
 replacePredefs (SSequence s1 s2) = SSequence (replacePredefs s1) (replacePredefs s2)
 replacePredefs (SCall e0 es) = SCall (replacePredefsExpr e0) (map replacePredefsExpr es)
 replacePredefs (SRun e0 es) = SRun (replacePredefsExpr e0) (map replacePredefsExpr es)
@@ -419,7 +419,7 @@ compileSt st =
                        compileExpression' expr compileExpr $
                          \cExpr -> return $ SH.Assign $ SH.Var (asId asym) cExpr
 
-      SDefFun sym tps pdef rettype stIn -> do
+      SDefFun sym props tps pdef rettype stIn -> do
               r <- findSymbolM sym
               case r of
                 Just _ -> throwError $ SymbolAlreadyDefined sym
@@ -454,7 +454,7 @@ unifyTypeVars :: (MonadState Context m, MonadError CompilerError m) => [TypePara
 unifyTypeVars typeParams actualTypes typeDefs = do
   let typeVarNames = Set.fromList $ map (\(TypeParam n) -> n) typeParams
   let pairs = zip actualTypes typeDefs
-  let mappings = catMaybes $ map (findTypeMapping typeVarNames) pairs
+  let mappings = mapMaybe (findTypeMapping typeVarNames) pairs
   -- TODO: error on ambiguous mapping
   return $ Map.fromList mappings
 
@@ -592,7 +592,7 @@ typeCheckSt st =
           storeTypeM sym typ
           return $ SimpleType TUnit
 
-      SDefFun sym tps pdef rettype stIn -> do
+      SDefFun sym props tps pdef rettype stIn -> do
           storeTypeM sym (SimpleType $ funType tps pdef rettype)
           -- TODO: add type params to context
           funCtx <- funContextM sym pdef

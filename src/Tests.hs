@@ -126,9 +126,12 @@ instance Arbitrary ParamDef where
 
   shrink (ParamDef (sym, typ)) = [ParamDef (sym', typ') | sym' <- shrink sym, typ' <- shrink typ]
 
+instance Arbitrary FunProps where
+  arbitrary = FunProps <$> arbitrary
+
 instance Arbitrary Statement where
   arbitrary = oneof [ SVarDecl <$> arbitrarySymbolName <*> arbitrary
-                    , SDefFun <$> arbitrarySymbolName <*> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
+                    , SDefFun <$> arbitrarySymbolName <*> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
                     , SSequence <$> (arbitrary `suchThat` (/= SNoOp)) <*> arbitrary
                     , SCall <$> arbitrary <*> arbitrary
                     , SRun <$> arbitrary <*> arbitrary
@@ -138,9 +141,9 @@ instance Arbitrary Statement where
 
   shrink (SVarDecl name expr) | (length name > 1) = [SVarDecl "x" expr]
                               | otherwise = [SVarDecl name expr' | expr' <- shrink expr]
-  shrink (SDefFun name tps ps rt body) | (length name > 1) = [SDefFun "f" tps ps rt body]
-                                       | (length ps > 1) = [SDefFun name tps ps' rt body | ps' <- shrink ps]
-                                       | otherwise = [SDefFun name tps ps rt' body' | rt' <- shrink rt, body' <- shrink body]
+  shrink (SDefFun name props tps ps rt body) | (length name > 1) = [SDefFun "f" props tps ps rt body]
+                                       | (length ps > 1) = [SDefFun name props tps ps' rt body | ps' <- shrink ps]
+                                       | otherwise = [SDefFun name props tps ps rt' body' | rt' <- shrink rt, body' <- shrink body]
   shrink (SSequence s1 s2) = shrink s1 ++
                              shrink s2 ++
                              [SSequence (SReturn (EIntLit 0)) s' | s' <- shrink s1] ++
@@ -177,7 +180,7 @@ instance ApproxEqProp Expression where
 
 instance ApproxEqProp SingleStatement where
   SSVarDecl n1 e1 ==~ SSVarDecl n2 e2 = n1 == n2 .&&. e1 ==~ e2
-  SSDefFun n1 tps1 ps1 t1 b1 ==~ SSDefFun n2 tps2 ps2 t2 b2 = n1 == n2 .&&. tps1 == tps2 .&&. ps1 == ps2 .&&. t1 == t2 .&&. b1 ==~ b2
+  SSDefFun n1 props1 tps1 ps1 t1 b1 ==~ SSDefFun n2 props2 tps2 ps2 t2 b2 = n1 == n2 .&&. props1 == props2 .&&. tps1 == tps2 .&&. ps1 == ps2 .&&. t1 == t2 .&&. b1 ==~ b2
   SSCall e1 e1s ==~ SSCall e2 e2s = e1 ==~ e2 .&&. conjoin (map (uncurry (==~)) (zip e1s e2s))
   SSRun e1 e1s ==~ SSRun e2 e2s = e1 ==~ e2 .&&. conjoin (map (uncurry (==~)) (zip e1s e2s))
   SSReturn e1 ==~ SSReturn e2 = e1 ==~ e2
