@@ -616,4 +616,4 @@ typeCheckSt st =
           typParams <- mapM typeCheckExpr params
           if (typProgram `typeEq` SimpleType TString) && all (\t -> t `typeEq` SimpleType TString) typParams
           then return $ SimpleType TUnit -- TODO
-          else (trace $ "program: " <> show program <> "params: " <> show params) $ throwError InvalidParametersForRunStatement
+          else (trace $ "program: " <> show program <> " params: " <> show params <> " with types " <> show typParams) $ throwError InvalidParametersForRunStatement

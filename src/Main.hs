@@ -9,6 +9,7 @@ import           System.Directory
 import           Text.Trifecta.Result
 
 import           Language.Barlang.Compiler
+import           Language.Barlang.Optimizer
 import           Language.Barlang.Parser
 import           Language.Barlang.PrettyPrint
 
@@ -52,12 +53,13 @@ run Parameters{..} = do
   case result of
    Failure xs -> showParseError xs
    Success mes -> do
-     case pPPrintOnly of
-      True -> putStrLn $ pprint mes
-      False -> do
-        let bash = compileToString mes
+     let optimized = optimize mes
+     if pPPrintOnly
+     then putStrLn $ pprint optimized
+     else do
+        let bash = compileToString optimized
 
-        when pDumpAST $ putStrLn (show mes)
+        when pDumpAST $ print optimized
 
         case pTarget of
          Nothing -> putStrLn bash
