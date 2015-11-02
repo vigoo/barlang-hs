@@ -17,7 +17,7 @@ data DefinedFunction =
   , dfParams     :: [ParamDef]
   , dfReturnType :: Type
   , dfBody       :: Statement
-  , dfAutoInline :: Bool
+  , dfInlined    :: Bool
   }
   deriving (Show, Eq)
 
@@ -43,7 +43,7 @@ markAutoInlineable :: DefinedFunction -> DefinedFunction
 markAutoInlineable def@DefinedFunction{..} =
   let statements = normalize dfBody
       inlineable = length statements == 1 && not (isReturn (head statements))
-  in def { dfAutoInline = inlineable }
+  in def { dfInlined = dfInlined || inlineable }
 
 defineFunction :: Statement -> OptimizerStateMonad ()
 defineFunction (SDefFun name props tps ps rett body) =
@@ -57,7 +57,7 @@ defineFunction (SDefFun name props tps ps rett body) =
           , dfParams = ps
           , dfReturnType = rett
           , dfBody = body
-          , dfAutoInline = False
+          , dfInlined = fpInline props
           }
 
 replaceSubExpression :: Expression -> Expression -> Expression -> Expression
@@ -103,12 +103,14 @@ optimizeStatement = \case
     optimizedBody <- optimizeStatement body
     let optimizedFun = SDefFun name props tps ps rett optimizedBody
     defineFunction optimizedFun
-    return optimizedFun
+    if fpInline props
+    then return SNoOp         -- Functions marked as inline are NOT defined as bash functions
+    else return optimizedFun
 
-  s@(SCall (EVar name) paramExprs) -> get >>= \state -> do
+  s@(SCall (EVar name) paramExprs) -> get >>= \state ->
     case Map.lookup name (osFunctionMap state) of
       Just def ->
-        if dfAutoInline def
+        if dfInlined def
         then trace ("Inlineing call to " <> name) $ pure $ inlinedFunctionApplication def paramExprs
         else pure s
       Nothing -> pure s
