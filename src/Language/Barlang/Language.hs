@@ -14,6 +14,23 @@ data Type = TUnit
           | TVar SymbolName
           deriving (Show, Eq)
 
+data UnaryOperator = UONot
+                     deriving (Show, Eq)
+
+data BinaryOperator = BOAnd
+                    | BOOr
+                    | BOAdd
+                    | BOSub
+                    | BOMul
+                    | BODiv
+                    | BOEq
+                    | BONeq
+                    | BOLess
+                    | BOLessEq
+                    | BOGreater
+                    | BOGreaterEq
+                    deriving (Show, Eq)
+
 data Expression = EStringLit String
                 | EBoolLit Bool
                 | EIntLit Int
@@ -22,19 +39,8 @@ data Expression = EStringLit String
                 | ESysVar SymbolName
                 | EPredefined SymbolName
                 | EApply Expression [Expression]
-                | EAnd Expression Expression
-                | EOr Expression Expression
-                | ENot Expression
-                | EAdd Expression Expression
-                | ESub Expression Expression
-                | EMul Expression Expression
-                | EDiv Expression Expression
-                | EEq Expression Expression
-                | ENeq Expression Expression
-                | ELess Expression Expression
-                | ELessEq Expression Expression
-                | EGreater Expression Expression
-                | EGreaterEq Expression Expression
+                | EUnaryOp UnaryOperator Expression
+                | EBinOp BinaryOperator Expression Expression
                   deriving (Show, Eq)
 
 newtype ParamDef = ParamDef (SymbolName, Type)

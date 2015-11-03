@@ -149,21 +149,21 @@ term parfun = parens (expression False)
         <|> systemVariable
 
 exprTable :: [[Operator Parser Expression]]
-exprTable = [ [Infix (pure EAnd <* token (reserved "and")) AssocLeft ]
-            , [Infix (pure EOr <* token (reserved "or")) AssocLeft ]
-            , [Prefix (pure ENot <* token (reserved "not"))]
-            , [Infix (pure EEq <* token (reserved "==")) AssocLeft
-              ,Infix (pure ENeq <* token (reserved "!=")) AssocLeft
-              ,Infix (pure ELessEq <* token (reserved "<=")) AssocLeft
-              ,Infix (pure EGreaterEq <* token (reserved ">=")) AssocLeft
-              ,Infix (pure EGreater <* token (reserved ">")) AssocLeft
-              ,Infix (pure ELess <* token (reserved "<")) AssocLeft
+exprTable = [ [Infix (pure (EBinOp BOAnd) <* token (reserved "and")) AssocLeft ]
+            , [Infix (pure (EBinOp BOOr) <* token (reserved "or")) AssocLeft ]
+            , [Prefix (pure (EUnaryOp UONot) <* token (reserved "not"))]
+            , [Infix (pure (EBinOp BOEq) <* token (reserved "==")) AssocLeft
+              ,Infix (pure (EBinOp BONeq) <* token (reserved "!=")) AssocLeft
+              ,Infix (pure (EBinOp BOLessEq) <* token (reserved "<=")) AssocLeft
+              ,Infix (pure (EBinOp BOGreaterEq) <* token (reserved ">=")) AssocLeft
+              ,Infix (pure (EBinOp BOGreater) <* token (reserved ">")) AssocLeft
+              ,Infix (pure (EBinOp BOLess) <* token (reserved "<")) AssocLeft
               ]
-            , [Infix (pure EMul <* token (reserved "*")) AssocLeft
-              ,Infix (pure EDiv <* token (reserved "/")) AssocLeft
+            , [Infix (pure (EBinOp BOMul) <* token (reserved "*")) AssocLeft
+              ,Infix (pure (EBinOp BODiv) <* token (reserved "/")) AssocLeft
               ]
-            , [Infix (pure EAdd <* token (reserved "+")) AssocLeft
-              ,Infix (pure ESub <* token (reserved "-")) AssocLeft
+            , [Infix (pure (EBinOp BOAdd) <* token (reserved "+")) AssocLeft
+              ,Infix (pure (EBinOp BOSub) <* token (reserved "-")) AssocLeft
               ]
             ]
 

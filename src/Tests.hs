@@ -76,31 +76,31 @@ instance Arbitrary Expression where
                              args <- replicateM k $ arbExpr l
                              fn <- EVar <$> arbitrarySymbolName
                              return $ EApply fn args
-                        , binary EAnd
-                        , binary EOr
-                        , binary EAdd
-                        , binary ESub
-                        , binary EMul
-                        , binary EDiv
-                        , binary EEq
-                        , binary ENeq
-                        , binary ELess
-                        , binary ELessEq
-                        , binary EGreater
-                        , binary EGreaterEq
-                        , unary ENot
+                        , binary BOAnd
+                        , binary BOOr
+                        , binary BOAdd
+                        , binary BOSub
+                        , binary BOMul
+                        , binary BODiv
+                        , binary BOEq
+                        , binary BONeq
+                        , binary BOLess
+                        , binary BOLessEq
+                        , binary BOGreater
+                        , binary BOGreaterEq
+                        , unary UONot
                         ]
             where
               unary c = do
                 l1 <- choose (0, n-1)
                 e1 <- arbExpr l1
-                return $ c e1
+                return $ EUnaryOp c e1
               binary c = do
                 l1 <- choose (0, n-1)
                 l2 <- choose (0, n-1)
                 e1 <- arbExpr l1
                 e2 <- arbExpr l2
-                return $ c e1 e2
+                return $ EBinOp c e1 e2
 
   shrink (EStringLit _) = [EStringLit "hello"]
   shrink (EIntLit _) = [EIntLit 1]
@@ -110,12 +110,12 @@ instance Arbitrary Expression where
   shrink (ESysVar n) | (length n > 1) = [ESysVar "V"]
                   | otherwise = []
   shrink (EApply sym args) = [EApply sym' args' | sym' <- shrink sym, args' <- shrink args]
-  shrink (EAnd e1 e2) = [EAnd e1' e2' | e1' <- shrink e1, e2' <- shrink e2] ++
-                        shrink e1 ++
-                        shrink e2
-  shrink (EOr e1 e2) = [EOr e1' e2' | e1' <- shrink e1, e2' <- shrink e2] ++
-                        shrink e1 ++
-                        shrink e2
+  shrink (EBinOp BOAnd e1 e2) = [EBinOp BOAnd e1' e2' | e1' <- shrink e1, e2' <- shrink e2] ++
+                                   shrink e1 ++
+                                   shrink e2
+  shrink (EBinOp BOOr e1 e2) = [EBinOp BOOr e1' e2' | e1' <- shrink e1, e2' <- shrink e2] ++
+                                  shrink e1 ++
+                                  shrink e2
   shrink _ = []
 
 
@@ -163,19 +163,8 @@ instance ApproxEqProp Expression where
   (EDoubleLit a) ==~ (EDoubleLit b) = counterexample (show a ++ " /= " ++ show b) (abs (a - b) < eps)
     where eps = 1e-6
   EApply a1 a2s ==~ EApply b1 b2s = a1 ==~ b1 .&&. counterexample (show a2s ++ " /= " ++ show b2s) (conjoin $ map (\(a2, b2) -> a2 ==~ b2) (zip a2s b2s))
-  EAnd a1 a2 ==~ EAnd b1 b2 = a1 ==~ b1 .&&. a2 ==~ b2
-  EOr a1 a2 ==~ EOr b1 b2 = a1 ==~ b1 .&&. a2 ==~ b2
-  ENot a1 ==~ ENot b1 = a1 ==~ b1
-  EAdd a1 a2 ==~ EAdd b1 b2 = a1 ==~ b1 .&&. a2 ==~ b2
-  ESub a1 a2 ==~ ESub b1 b2 = a1 ==~ b1 .&&. a2 ==~ b2
-  EMul a1 a2 ==~ EMul b1 b2 = a1 ==~ b1 .&&. a2 ==~ b2
-  EDiv a1 a2 ==~ EDiv b1 b2 = a1 ==~ b1 .&&. a2 ==~ b2
-  EEq a1 a2 ==~ EEq b1 b2 = a1 ==~ b1 .&&. a2 ==~ b2
-  ENeq a1 a2 ==~ ENeq b1 b2 = a1 ==~ b1 .&&. a2 ==~ b2
-  ELess a1 a2 ==~ ELess b1 b2 = a1 ==~ b1 .&&. a2 ==~ b2
-  ELessEq a1 a2 ==~ ELessEq b1 b2 = a1 ==~ b1 .&&. a2 ==~ b2
-  EGreater a1 a2 ==~ EGreater b1 b2 = a1 ==~ b1 .&&. a2 ==~ b2
-  EGreaterEq a1 a2 ==~ EGreaterEq b1 b2 = a1 ==~ b1 .&&. a2 ==~ b2
+  EUnaryOp op1 a1 ==~ EUnaryOp op2 b1 = op1 == op2 .&&. a1 ==~ b1
+  EBinOp op1 a1 a2 ==~ EBinOp op2 b1 b2 = op1 == op2 .&&. a1 ==~ b1 .&&. a2 ==~ b2
   a ==~ b = a === b
 
 instance ApproxEqProp SingleStatement where

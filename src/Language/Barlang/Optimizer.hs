@@ -66,19 +66,8 @@ replaceSubExpression from to x =
   then to
   else case x of
     EApply e0 es -> EApply (replaceSubExpression from to e0) (map (replaceSubExpression from to) es)
-    EAnd e1 e2 -> EAnd (replaceSubExpression from to e1) (replaceSubExpression from to e2)
-    EOr e1 e2 -> EOr (replaceSubExpression from to e1) (replaceSubExpression from to e2)
-    ENot e1 -> ENot (replaceSubExpression from to e1)
-    EAdd e1 e2 -> EAdd (replaceSubExpression from to e1) (replaceSubExpression from to e2)
-    ESub e1 e2 -> ESub (replaceSubExpression from to e1) (replaceSubExpression from to e2)
-    EMul e1 e2 -> EMul (replaceSubExpression from to e1) (replaceSubExpression from to e2)
-    EDiv e1 e2 -> EDiv (replaceSubExpression from to e1) (replaceSubExpression from to e2)
-    EEq e1 e2 -> EEq (replaceSubExpression from to e1) (replaceSubExpression from to e2)
-    ENeq e1 e2 -> ENeq (replaceSubExpression from to e1) (replaceSubExpression from to e2)
-    ELess e1 e2 -> ELess (replaceSubExpression from to e1) (replaceSubExpression from to e2)
-    ELessEq e1 e2 -> ELessEq (replaceSubExpression from to e1) (replaceSubExpression from to e2)
-    EGreater e1 e2 -> EGreater (replaceSubExpression from to e1) (replaceSubExpression from to e2)
-    EGreaterEq e1 e2 -> EGreaterEq (replaceSubExpression from to e1) (replaceSubExpression from to e2)
+    EUnaryOp op e1 -> EUnaryOp op (replaceSubExpression from to e1)
+    EBinOp op e1 e2 -> EBinOp op (replaceSubExpression from to e1) (replaceSubExpression from to e2)
     e -> e
 
 

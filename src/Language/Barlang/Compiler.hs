@@ -116,19 +116,8 @@ replacePredefsExpr :: Expression -> Expression
 replacePredefsExpr (EVar n) | n `Map.member` predefined =
   EPredefined n
 replacePredefsExpr (EApply e0 es) = EApply (replacePredefsExpr e0) (map replacePredefsExpr es)
-replacePredefsExpr (ENot e) = ENot (replacePredefsExpr e)
-replacePredefsExpr (EAnd a b) = EAnd (replacePredefsExpr a) (replacePredefsExpr b)
-replacePredefsExpr (EOr a b) = EOr (replacePredefsExpr a) (replacePredefsExpr b)
-replacePredefsExpr (EAdd a b) = EAdd (replacePredefsExpr a) (replacePredefsExpr b)
-replacePredefsExpr (ESub a b) = ESub (replacePredefsExpr a) (replacePredefsExpr b)
-replacePredefsExpr (EMul a b) = EMul (replacePredefsExpr a) (replacePredefsExpr b)
-replacePredefsExpr (EDiv a b) = EDiv (replacePredefsExpr a) (replacePredefsExpr b)
-replacePredefsExpr (EEq a b) = EEq (replacePredefsExpr a) (replacePredefsExpr b)
-replacePredefsExpr (ENeq a b) = ENeq (replacePredefsExpr a) (replacePredefsExpr b)
-replacePredefsExpr (ELess a b) = ELess (replacePredefsExpr a) (replacePredefsExpr b)
-replacePredefsExpr (ELessEq a b) = ELessEq (replacePredefsExpr a) (replacePredefsExpr b)
-replacePredefsExpr (EGreater a b) = EGreater (replacePredefsExpr a) (replacePredefsExpr b)
-replacePredefsExpr (EGreaterEq a b) = EGreaterEq (replacePredefsExpr a) (replacePredefsExpr b)
+replacePredefsExpr (EUnaryOp op e) = EUnaryOp op (replacePredefsExpr e)
+replacePredefsExpr (EBinOp op a b) = EBinOp op (replacePredefsExpr a) (replacePredefsExpr b)
 replacePredefsExpr e = e
 
 runChildContext :: Context -> CompilerMonad a -> CompilerMonad a
@@ -216,13 +205,13 @@ compileTestExpr = \case
             throwError $ CannotInferType sym
        Nothing ->
          throwError $ UndefinedSymbol sym
-    EAnd a b -> binaryTestExpr a b "&&"
-    EOr a b -> binaryTestExpr a b "||"
-    ENot e -> do
+    EBinOp BOAnd a b -> binaryTestExpr a b "&&"
+    EBinOp BOOr a b -> binaryTestExpr a b "||"
+    EUnaryOp UONot e -> do
       e' <- compileTestExpr e
       return $ "! " <> e'
-    EEq a b -> binaryTestExpr a b "="
-    ENeq a b -> binaryTestExpr a b "!="
+    EBinOp BOEq a b -> binaryTestExpr a b "="
+    EBinOp BONeq a b -> binaryTestExpr a b "!="
 
     e -> do
       nr <- numericSubExpr e
@@ -249,11 +238,11 @@ compileBoolExpr expr = case expr of
        return $ "$(exit $" <> asIdString asym <> ")"
      Nothing ->
        throwError $ UndefinedSymbol sym
-  EAnd a b -> do
+  EBinOp BOAnd a b -> do
     e1 <- compileBoolExpr a
     e2 <- compileBoolExpr b
     return $ e1 <> " && " <> e2
-  EOr a b -> do
+  EBinOp BOOr a b -> do
     e1 <- compileBoolExpr a
     e2 <- compileBoolExpr b
     return $ e1 <> " || " <> e2
@@ -272,10 +261,10 @@ boolTempVar expr = do
 compileIntegerExpr :: Expression -> ExpressionCompilerMonad B.ByteString
 compileIntegerExpr expr = case expr of
   EIntLit n -> return $ B.fromString $ show n
-  EAdd a b -> compileNumericBinaryOp a b "+"
-  ESub a b -> compileNumericBinaryOp a b "-"
-  EMul a b -> compileNumericBinaryOp a b "*"
-  EDiv a b -> compileNumericBinaryOp a b "/"
+  EBinOp BOAdd a b -> compileNumericBinaryOp a b "+"
+  EBinOp BOSub a b -> compileNumericBinaryOp a b "-"
+  EBinOp BOMul a b -> compileNumericBinaryOp a b "*"
+  EBinOp BODiv a b -> compileNumericBinaryOp a b "/"
   _ -> throwError $ NotSupported (show expr)
  where
    compileNumericBinaryOp a b op = do
@@ -294,10 +283,10 @@ compileDoubleExpr :: Expression -> ExpressionCompilerMonad B.ByteString
 compileDoubleExpr expr = case expr of
   EIntLit n -> return $ B.fromString $ show n
   EDoubleLit n -> return $ B.fromString $ show n
-  EAdd a b -> compileNumericBinaryOp a b "+"
-  ESub a b -> compileNumericBinaryOp a b "-"
-  EMul a b -> compileNumericBinaryOp a b "*"
-  EDiv a b -> compileNumericBinaryOp a b "/"
+  EBinOp BOAdd a b -> compileNumericBinaryOp a b "+"
+  EBinOp BOSub a b -> compileNumericBinaryOp a b "-"
+  EBinOp BOMul a b -> compileNumericBinaryOp a b "*"
+  EBinOp BODiv a b -> compileNumericBinaryOp a b "/"
   _ -> throwError $ NotSupported (show expr)
  where
    compileNumericBinaryOp a b op = do
@@ -315,11 +304,11 @@ doubleTempVar expr = do
 boolSubExpr :: Expression -> ExpressionCompilerMonad (Maybe BashExpression)
 boolSubExpr expr =
     case expr of
-      EAnd _ _ -> boolSubExpr'
-      EOr _ _ -> boolSubExpr'
-      ENot _ -> boolSubExpr'
-      EEq _ _ -> boolSubExpr'
-      ENeq _ _ -> boolSubExpr'
+      EUnaryOp UONot _ -> boolSubExpr'
+      EBinOp BOAnd _ _ -> boolSubExpr'
+      EBinOp BOOr _ _ -> boolSubExpr'
+      EBinOp BOEq _ _ -> boolSubExpr'
+      EBinOp BONeq _ _ -> boolSubExpr'
       _ -> return Nothing
   where
     boolSubExpr' = do
@@ -329,10 +318,10 @@ boolSubExpr expr =
 numericSubExpr :: Expression -> ExpressionCompilerMonad (Maybe BashExpression)
 numericSubExpr expr =
     case expr of
-      EAdd a b -> numericSubExpr' a b
-      ESub a b -> numericSubExpr' a b
-      EMul a b -> numericSubExpr' a b
-      EDiv a b -> numericSubExpr' a b
+      EBinOp BOAdd a b -> numericSubExpr' a b
+      EBinOp BOSub a b -> numericSubExpr' a b
+      EBinOp BOMul a b -> numericSubExpr' a b
+      EBinOp BODiv a b -> numericSubExpr' a b
       EIntLit n -> return $ Just (SH.literal (B.fromString $ show n))
       EDoubleLit n -> return $ Just (SH.literal (B.fromString $ show n))
       _ -> return Nothing
@@ -394,10 +383,10 @@ compileExpr expr =
                   (noAnnotation $ SH.SimpleCommand funRef $ (SH.literal (asIdString tmpSym)):cParams)
                 return $ SH.ReadVar (SH.VarIdent $ asId tmpSym)
 
-      ELess _ _ -> throwError $ NotSupported "<"
-      ELessEq _ _ -> throwError $ NotSupported "<="
-      EGreater _ _ -> throwError $ NotSupported ">"
-      EGreaterEq _ _ -> throwError $ NotSupported ">="
+      EBinOp BOLess _ _ -> throwError $ NotSupported "<"
+      EBinOp BOLessEq _ _ -> throwError $ NotSupported "<="
+      EBinOp BOGreater _ _ -> throwError $ NotSupported ">"
+      EBinOp BOGreaterEq _ _ -> throwError $ NotSupported ">="
       _ -> do
         br <- boolSubExpr expr
         nr <- numericSubExpr expr
@@ -515,27 +504,27 @@ typeCheckExpr expr =
                 False -> throwError $ InvalidParameterTypes funName expectedTypes paramTypes
             _ -> throwError $ SymbolNotBoundToFunction funName
 
-      ENot e -> do
+      EUnaryOp UONot e -> do
         t <- typeCheckExpr e
         case t of
          SimpleType TBool -> return $ SimpleType TBool
          _ -> throwError $ InvalidBooleanExpression $ Just expr
 
-      EAnd e1 e2 -> typeCheckBinaryBoolExpr e1 e2
-      EOr e1 e2 -> typeCheckBinaryBoolExpr e1 e2
+      EBinOp BOAnd e1 e2 -> typeCheckBinaryBoolExpr e1 e2
+      EBinOp BOOr e1 e2 -> typeCheckBinaryBoolExpr e1 e2
 
-      EAdd e1 e2 -> typeCheckBinaryNumericExpr e1 e2 Nothing
-      ESub e1 e2 -> typeCheckBinaryNumericExpr e1 e2 Nothing
-      EMul e1 e2 -> typeCheckBinaryNumericExpr e1 e2 Nothing
-      EDiv e1 e2 -> typeCheckBinaryNumericExpr e1 e2 Nothing
+      EBinOp BOAdd e1 e2 -> typeCheckBinaryNumericExpr e1 e2 Nothing
+      EBinOp BOSub e1 e2 -> typeCheckBinaryNumericExpr e1 e2 Nothing
+      EBinOp BOMul e1 e2 -> typeCheckBinaryNumericExpr e1 e2 Nothing
+      EBinOp BODiv e1 e2 -> typeCheckBinaryNumericExpr e1 e2 Nothing
 
-      ELess e1 e2 -> typeCheckBinaryNumericExpr e1 e2 $ Just TBool
-      ELessEq e1 e2 -> typeCheckBinaryNumericExpr e1 e2 $ Just TBool
-      EGreater e1 e2 -> typeCheckBinaryNumericExpr e1 e2 $ Just TBool
-      EGreaterEq e1 e2 -> typeCheckBinaryNumericExpr e1 e2 $ Just TBool
+      EBinOp BOLess e1 e2 -> typeCheckBinaryNumericExpr e1 e2 $ Just TBool
+      EBinOp BOLessEq e1 e2 -> typeCheckBinaryNumericExpr e1 e2 $ Just TBool
+      EBinOp BOGreater e1 e2 -> typeCheckBinaryNumericExpr e1 e2 $ Just TBool
+      EBinOp BOGreaterEq e1 e2 -> typeCheckBinaryNumericExpr e1 e2 $ Just TBool
 
-      EEq e1 e2 -> typeCheckEqualityExpr e1 e2
-      ENeq e1 e2 -> typeCheckEqualityExpr e1 e2
+      EBinOp BOEq e1 e2 -> typeCheckEqualityExpr e1 e2
+      EBinOp BONeq e1 e2 -> typeCheckEqualityExpr e1 e2
 
   where
     typeCheckBinaryBoolExpr e1 e2 = do
