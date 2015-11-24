@@ -136,6 +136,7 @@ instance Arbitrary Statement where
                     , SCall <$> arbitrary <*> arbitrary
                     , SRun <$> arbitrary <*> arbitrary
                     , SReturn <$> arbitrary
+                    , SIf <$> arbitrary <*> arbitrary <*> arbitrary
                     , pure SNoOp
                     ]
 
@@ -173,6 +174,7 @@ instance ApproxEqProp SingleStatement where
   SSCall e1 e1s ==~ SSCall e2 e2s = e1 ==~ e2 .&&. conjoin (map (uncurry (==~)) (zip e1s e2s))
   SSRun e1 e1s ==~ SSRun e2 e2s = e1 ==~ e2 .&&. conjoin (map (uncurry (==~)) (zip e1s e2s))
   SSReturn e1 ==~ SSReturn e2 = e1 ==~ e2
+  SSIf c1 t1 f1 ==~ SSIf c2 t2 f2 = c1 ==~ c2 .&&. t1 ==~ t2 .&&. f1 ==~ f2
   a ==~ b = a === b
 
 instance ApproxEqProp Statement where

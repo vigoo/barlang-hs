@@ -7,7 +7,7 @@
   + refactor bool/int/double subexpr entry points to be reusable from each other
 + str()
 + Auto inline
-* If
++ If
 - better str()
 - Closure
 - Process

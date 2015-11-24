@@ -57,6 +57,7 @@ data SingleStatement = SSVarDecl SymbolName Expression
                      | SSDefFun SymbolName FunProps [TypeParam] [ParamDef] Type Statement
                      | SSCall Expression [Expression]
                      | SSRun Expression [Expression] -- TODO: this should be an expression returning a process value
+                     | SSIf Expression Statement Statement
                      | SSReturn Expression
                      deriving (Show, Eq)
 
@@ -67,6 +68,7 @@ data Statement = SVarDecl SymbolName Expression
                | SCall Expression [Expression]
                | SRun Expression [Expression] -- TODO: this should be an expression returning a process value
                | SReturn Expression
+               | SIf Expression Statement Statement
                | SNoOp
                  deriving (Show)
 
@@ -76,6 +78,7 @@ normalize (SDefFun s props tp p t b) = [SSDefFun s props tp p t b]
 normalize (SCall n p) = [SSCall n p]
 normalize (SRun n p) = [SSRun n p]
 normalize (SReturn e) = [SSReturn e]
+normalize (SIf c t f) = [SSIf c t f]
 normalize (SNoOp) = []
 normalize (SSequence s1 s2) = concatMap normalize [s1, s2]
 

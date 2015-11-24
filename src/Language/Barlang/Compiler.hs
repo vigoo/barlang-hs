@@ -110,6 +110,7 @@ replacePredefs (SSequence s1 s2) = SSequence (replacePredefs s1) (replacePredefs
 replacePredefs (SCall e0 es) = SCall (replacePredefsExpr e0) (map replacePredefsExpr es)
 replacePredefs (SRun e0 es) = SRun (replacePredefsExpr e0) (map replacePredefsExpr es)
 replacePredefs (SReturn e) = SReturn (replacePredefsExpr e)
+replacePredefs (SIf cond tbody fbody) = SIf (replacePredefsExpr cond) (replacePredefs tbody) (replacePredefs fbody)
 replacePredefs SNoOp = SNoOp
 
 replacePredefsExpr :: Expression -> Expression
@@ -439,6 +440,15 @@ compileSt st =
         compileExpression' program compileExpr $ \cProgram ->
           compileExpressions' params compileExpr $ \cParams -> return $ SH.SimpleCommand cProgram cParams
 
+      SIf cond tbody fbody -> do
+        (condExpr, prereqs) <- runWriterT (compileBoolExpr cond)
+        tContext <- cloneContext
+        fContext <- cloneContext
+        cTBody <- runChildContext tContext (compileSt tbody)
+        cFBody <- runChildContext fContext (compileSt fbody)
+        let st = SH.IfThenElse (SH.Annotated (SH.Lines [condExpr] []) SH.Empty) (noAnnotation cTBody) (noAnnotation cFBody)
+        prereqs <> return st
+
 unifyTypeVars :: (MonadState Context m, MonadError CompilerError m) => [TypeParam] -> [ExtendedType] -> [Type] -> m (Map.Map SymbolName Type)
 unifyTypeVars typeParams actualTypes typeDefs = do
   let typeVarNames = Set.fromList $ map (\(TypeParam n) -> n) typeParams
@@ -571,6 +581,9 @@ funContext ctx@Context{..} name params = paramCtx { ctxSymbolTypes = ctxSymbolTy
 funContextM :: SymbolName -> [ParamDef] -> CompilerMonad Context
 funContextM name params = gets $ \ctx -> funContext ctx name params
 
+cloneContext :: CompilerMonad Context
+cloneContext = get
+
 typeCheckSt :: Statement -> CompilerMonad ExtendedType
 typeCheckSt st =
     case st of
@@ -606,3 +619,13 @@ typeCheckSt st =
           if (typProgram `typeEq` SimpleType TString) && all (\t -> t `typeEq` SimpleType TString) typParams
           then return $ SimpleType TUnit -- TODO
           else (trace $ "program: " <> show program <> " params: " <> show params <> " with types " <> show typParams) $ throwError InvalidParametersForRunStatement
+
+      SIf cond tbody fbody -> do
+          (!condTyp) <- typeCheckExpr cond
+          if condTyp `typeEq` SimpleType TBool
+          then do
+            _ <- typeCheckSt tbody
+            _ <- typeCheckSt fbody
+            return $ SimpleType TUnit
+          else
+            throwError $ InvalidConditionalExpressionTypeForIf condTyp

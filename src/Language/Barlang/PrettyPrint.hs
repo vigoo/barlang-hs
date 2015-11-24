@@ -90,6 +90,12 @@ instance Codeable Statement where
              SCall fnExpr pExprs -> (parensIfNotVar fnExpr) <++> parenthesis (interleave ", " (codeList pExprs)) <+> ";"
              SRun runExpr pExprs -> "> " <+> runExpr <++> (interleave " " (codeList pExprs)) <+> ";"
              SReturn expr -> "return" <++> expr <+> ";"
+             SIf c t f -> "if" <++> c <->
+                         "then" <-> indent 4 t <->
+                         (if f /= SNoOp
+                          then "else" <-> indent 4 f
+                          else noCode) <->
+                         "end;"
              SNoOp -> noCode
 
 

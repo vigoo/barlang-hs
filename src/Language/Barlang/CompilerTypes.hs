@@ -32,6 +32,7 @@ data CompilerError = InvalidFunctionContext
                    | EqualityUsedOnNonEqualTypes [ExtendedType]
                    | UnsupportedTypeInBooleanExpression ExtendedType
                    | InvalidUseOfPredefinedFunction SymbolName
+                   | InvalidConditionalExpressionTypeForIf ExtendedType
                    | GeneralError String
                      deriving (Show)
 

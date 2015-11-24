@@ -44,6 +44,9 @@ idStyle = emptyIdents { _styleReserved = set [ "string"
                                              , ":"
                                              , "end"
                                              , "inline"
+                                             , "if"
+                                             , "then"
+                                             , "else"
                                              , "true"
                                              , "false"
                                              , "and"
@@ -186,6 +189,20 @@ val = SVarDecl <$> (valKeyword *> identifier <* equals) <*> expression False <?>
     valKeyword = token $ reserved "val"
     equals = token $ reserved "="
 
+ifthenelse :: Parser Statement
+ifthenelse =     try (SIf <$> (ifKeyword *> expression False <* thenKeyword) <*> (collapse <$> body endKeyword) <*> pure SNoOp)
+             <|> (SIf <$> (ifKeyword *> expression False <* thenKeyword) <*> (collapse <$> body elseKeyword) <*> (collapse <$> body endKeyword))
+             <?> "conditional statement"
+  where
+    ifKeyword = token $ reserved "if"
+    thenKeyword = token $ reserved "then"
+    endKeyword = token $ reserved "end"
+    elseKeyword = token $ reserved "else"
+    body fin = (try fin >> return [])
+               <|> do x <- statement <* semi
+                      xs <- body fin
+                      return $ x:xs
+
 call :: Parser Statement
 call = try $ SCall <$> (expression True <|> variable) <*> paramList
   where
@@ -198,7 +215,7 @@ run = (token $ reserved ">") >> SRun <$> expression True <*> runParams
 
 deffun :: Parser Statement
 deffun = inlineKeyword >>= \inline ->
-  SDefFun <$> (defKeyword *> identifier) <*> pure (defaultFunProps { fpInline = inline }) <*> typeParams <*> paramDefs <*> retType <*> (collapse <$> body)
+  SDefFun <$> (defKeyword *> identifier) <*> pure (defaultFunProps { fpInline = inline }) <*> typeParams <*> paramDefs <*> retType <*> (collapse <$> body) <?> "function definition"
 
   where
     inlineKeyword = liftM (fromMaybe False) $ (optional ((token $ reserved "inline") >> return True))
@@ -220,6 +237,7 @@ statement :: Parser Statement
 statement = choice [ ret
                    , run
                    , val
+                   , ifthenelse
                    , call
                    , deffun
                    , nop
