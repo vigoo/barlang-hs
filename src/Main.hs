@@ -49,7 +49,7 @@ withParameters fn = execParser opts >>= fn
 
 run :: Parameters -> IO ()
 run Parameters{..} = do
-  result <- parseMesFile pSource
+  result <- parseBarlangFile pSource
   case result of
    Failure xs -> showParseError xs
    Success mes -> do

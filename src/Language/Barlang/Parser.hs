@@ -2,8 +2,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Language.Barlang.Parser ( parseType
                                , parseExpr
-                               , parseMes
-                               , parseMesFile
+                               , parseBarlang
+                               , parseBarlangFile
                                , showParseError
                                )
        where
@@ -251,6 +251,9 @@ collapse (x:xs) = SSequence x (collapse xs)
 statements :: Parser Statement
 statements = collapse <$> statement `endBy` semi
 
+script :: Parser Script
+script = Script <$> statements <* eof
+
 showParseError :: (MonadIO m) => Pretty.Doc -> m ()
 showParseError xs = liftIO $ Pretty.displayIO stdout $ Pretty.renderPretty 0.8 80 $ xs <> Pretty.linebreak
 
@@ -263,8 +266,8 @@ parseType = parse typeExpr
 parseExpr :: String -> Result Expression
 parseExpr = parse $ expression False
 
-parseMes :: String -> Result Script
-parseMes = parse (Script <$> statements)
+parseBarlang :: String -> Result Script
+parseBarlang = parse script
 
-parseMesFile :: FilePath -> IO (Result Script)
-parseMesFile = parseFromFileEx (Script <$> statements)
+parseBarlangFile :: FilePath -> IO (Result Script)
+parseBarlangFile = parseFromFileEx script
