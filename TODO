@@ -8,8 +8,8 @@
 + str()
 + Auto inline
 + If
-- better str()
-- Closure
++ better str()
+* Closure
 - Process
 - Arrays, command line args
 - Loop

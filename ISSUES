@@ -1,2 +1,3 @@
 - Space should not be required around binary operators
 - Negative numbers should be parseable without parenthesis where it is not ambiguous
+- Parser does not always print errors, just stops
