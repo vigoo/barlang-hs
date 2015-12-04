@@ -3,7 +3,7 @@ def print(s: string): unit
 end;
 
 inline def generic_print[T](s: T): unit
-	> "echo" (str(s));
+	print(str(s));
 end;
 
 print(str("string literal"));
