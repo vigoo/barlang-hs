@@ -20,6 +20,7 @@ import           Text.Parser.Char
 import           Text.Parser.Combinators
 import           Text.Parser.Expression
 import           Text.Parser.Token
+import           Text.Parser.Token.Highlight
 import           Text.Parser.Token.Style
 import qualified Text.PrettyPrint.ANSI.Leijen as Pretty hiding (empty, line,
                                                          (<$>), (<>))
@@ -86,19 +87,22 @@ typeFunArrow :: Parser ()
 typeFunArrow = token $ reserved "->"
 
 typeFunParams :: Parser [Type]
-typeFunParams = parens $ commaSep typeExpr
+typeFunParams = parens $ commaSep typeExpr <?> "function parameter type list"
 
 typeParam :: Parser TypeParam
-typeParam = TypeParam <$> identifier
+typeParam = TypeParam <$> identifier <?> "type parameter"
 
 typeParams :: Parser [TypeParam]
-typeParams = option [] $ brackets $ commaSep typeParam
+typeParams = option [] $ brackets $ commaSep typeParam <?> "type parameter list"
 
 typeFun :: Parser Type
-typeFun = TFun <$> typeParams <*> typeFunParams <*> (typeFunArrow *> typeExpr)
+typeFun = TFun <$> typeParams
+               <*> typeFunParams
+               <*> (typeFunArrow *> typeExpr <?> "function return type")
+               <?> "function type"
 
 typeVar :: Parser Type
-typeVar = TVar <$> identifier
+typeVar = TVar <$> identifier <?> "type variable"
 
 typeExpr :: Parser Type
 typeExpr = choice [ typeUnit
@@ -109,33 +113,34 @@ typeExpr = choice [ typeUnit
                   , typeFun
                   , typeVar
                   ]
+             <?> "type"
 
 -- Expressions
 stringLit :: Parser Expression
 stringLit = EStringLit <$> stringLiteral
 
 boolLit :: Parser Expression
-boolLit = EBoolLit <$> (true <|> false)
+boolLit = EBoolLit <$> (highlight Constant $ true <|> false) <?> "boolean literal"
   where
     true = token $ reserved "true" >> return True
     false = token $ reserved "false" >> return False
 
 intLit :: Parser Expression
-intLit = EIntLit . fromInteger <$> integer
+intLit = EIntLit . fromInteger <$> highlight Constant integer <?> "integer literal"
 
 doubleLit :: Parser Expression
-doubleLit = EDoubleLit <$> double
+doubleLit = EDoubleLit <$> highlight Constant double <?> "double literal"
 
 numLit :: Parser Expression
-numLit = integerOrDouble >>= \case
+numLit = (integerOrDouble >>= \case
   Left i -> return $ EIntLit $ fromInteger i
-  Right d -> return $ EDoubleLit d
+  Right d -> return $ EDoubleLit d) <?> "numeric literal"
 
 variable :: Parser Expression
-variable = EVar <$> identifier
+variable = EVar <$> identifier <?> "variable identifier"
 
 systemVariable :: Parser Expression
-systemVariable = ESysVar <$> (char '$' *> identifier)
+systemVariable = ESysVar <$> (highlight Identifier $ char '$' *> identifier) <?> "system variable"
 
 funApplication :: Parser Expression
 funApplication = try $ EApply <$> variable <*> paramList
@@ -171,7 +176,7 @@ exprTable = [ [Infix (pure (EBinOp BOAnd) <* token (reserved "and")) AssocLeft ]
             ]
 
 expression :: Bool -> Parser Expression
-expression parfun = buildExpressionParser exprTable (term parfun)
+expression parfun = buildExpressionParser exprTable (term parfun) <?> "expression"
 
 -- Statements
 
@@ -204,21 +209,31 @@ ifthenelse =     try (SIf <$> (ifKeyword *> expression False <* thenKeyword) <*>
                       return $ x:xs
 
 call :: Parser Statement
-call = try $ SCall <$> (expression True <|> variable) <*> paramList
+call = try (SCall <$> ((expression True <?> "function expression") <|> (variable <?> "function name"))
+                  <*> paramList
+           ) <?> "function call"
   where
-    paramList = parens $ commaSep (expression False)
+    paramList = parens (commaSep (expression False)) <?> "function call's parameter list"
 
 run :: Parser Statement
-run = (token $ reserved ">") >> SRun <$> expression True <*> runParams
+run = (token $ reserved ">") >> (SRun <$> (expression True <?> "program name")
+                                      <*> runParams <?> "program parameter list"
+                                ) <?> "run statement"
   where
     runParams = many $ expression True
 
 deffun :: Parser Statement
 deffun = inlineKeyword >>= \inline ->
-  SDefFun <$> (defKeyword *> identifier) <*> pure (defaultFunProps { fpInline = inline }) <*> typeParams <*> paramDefs <*> retType <*> (collapse <$> body) <?> "function definition"
+  (SDefFun <$> (defKeyword *> identifier <?> "function name")
+           <*> pure (defaultFunProps { fpInline = inline })
+           <*> typeParams
+           <*> paramDefs
+           <*> retType
+           <*> (collapse <$> body <?> "function body")
+  ) <?> "function definition"
 
   where
-    inlineKeyword = liftM (fromMaybe False) $ (optional ((token $ reserved "inline") >> return True))
+    inlineKeyword = liftM (fromMaybe False) $ (optional ((token $ reserved "inline") >> return True)) <?> "inline keyword"
     defKeyword = token $ reserved "def"
     endKeyword = token $ reserved "end"
     typSepSym = token $ reserved ":"
@@ -226,8 +241,8 @@ deffun = inlineKeyword >>= \inline ->
                   typSepSym
                   typ <- typeExpr
                   return $ ParamDef (name, typ)
-    paramDefs = parens $ commaSep paramDef
-    retType = typSepSym *> typeExpr
+    paramDefs = parens $ commaSep paramDef <?> "parameter list definition"
+    retType = typSepSym *> typeExpr <?> "return type definition"
     body = (try endKeyword >> return [])
            <|> do x <- statement <* semi
                   xs <- body
@@ -242,6 +257,7 @@ statement = choice [ ret
                    , deffun
                    , nop
                    ]
+            <?> "statement"
 
 collapse :: [Statement] -> Statement
 collapse [] = SNoOp
@@ -249,16 +265,16 @@ collapse [s] = s
 collapse (x:xs) = SSequence x (collapse xs)
 
 statements :: Parser Statement
-statements = collapse <$> statement `endBy` semi
+statements = collapse <$> statement `endBy` semi <?> "statements"
 
 script :: Parser Script
-script = Script <$> statements <* eof
+script = (Script <$> statements <* eof) <?> "barlang script"
 
 showParseError :: (MonadIO m) => Pretty.Doc -> m ()
 showParseError xs = liftIO $ Pretty.displayIO stdout $ Pretty.renderPretty 0.8 80 $ xs <> Pretty.linebreak
 
 parse :: Parser a -> String -> Result a
-parse p src = parseString p (Columns 0 0) src
+parse p = parseString p (Columns 0 0)
 
 parseType :: String -> Result Type
 parseType = parse typeExpr
