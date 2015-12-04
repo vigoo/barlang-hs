@@ -18,9 +18,11 @@ import qualified Language.Bash                  as SH
 import qualified Language.Bash.Annotations      as SH
 import qualified Language.Bash.Syntax           as SH
 
+type CompileExpressionFn = Expression -> (BashExpression -> CompilerMonad BashStatement) -> CompilerMonad BashStatement
+
 data PredefinedExpression
   = PredefinedExpression Expression
-  | CustomExpression ([TypedExpression] -> ExpressionCompilerMonad BashExpression)
+  | CustomExpression (CompileExpressionFn -> [TypedExpression] -> ExpressionCompilerMonad BashExpression)
 
 data PredefinedValue
   = PredefinedValue
@@ -31,7 +33,7 @@ data PredefinedValue
 
 isCustomPredefinedExpression :: SymbolName -> Bool
 isCustomPredefinedExpression name =
-  case (Map.lookup name predefined) of
+  case Map.lookup name predefined of
     Just (PredefinedValue{..}) ->
       case predefValue of
         CustomExpression _ -> True
@@ -41,17 +43,17 @@ isCustomPredefinedExpression name =
 predef :: SymbolName -> Type -> Expression -> (SymbolName, PredefinedValue)
 predef n t e = (n, PredefinedValue { predefName = n, predefType = t, predefValue = PredefinedExpression e})
 
-custom :: SymbolName -> Type -> ([TypedExpression] -> ExpressionCompilerMonad BashExpression) -> (SymbolName, PredefinedValue)
+custom :: SymbolName -> Type -> (CompileExpressionFn -> [TypedExpression] -> ExpressionCompilerMonad BashExpression) -> (SymbolName, PredefinedValue)
 custom n t f = (n, PredefinedValue { predefName = n, predefType = t, predefValue = CustomExpression f})
 
 predefined :: Map.Map SymbolName PredefinedValue
-predefined = Map.fromList $
+predefined = Map.fromList
   [ predef "pi" TDouble (EDoubleLit pi)
   , custom "str" (TFun [TypeParam "T"] [TVar "T"] TString) str
   ]
 
-str :: [TypedExpression] -> ExpressionCompilerMonad BashExpression
-str [param] = case param of
+str :: CompileExpressionFn -> [TypedExpression] -> ExpressionCompilerMonad BashExpression
+str compileExpression [param] = case param of
   (TypedExpression (SimpleType TString) (EStringLit str)) -> litString str
   (TypedExpression (SimpleType TBool) (EBoolLit True)) -> litString "true"
   (TypedExpression (SimpleType TBool) (EBoolLit False)) -> litString "false"
@@ -60,18 +62,32 @@ str [param] = case param of
   (TypedExpression typ (EVar sym)) -> do
     r <- findSymbolM sym
     case r of
-      Just asym ->
-        case typ of
-          (SimpleType TString) -> return (SH.ReadVar (SH.VarIdent $ asId asym))
-          (SimpleType TBool) -> return (SH.ReadVar (SH.VarIdent $ asId asym)) -- TODO: custom formatting
-          (SimpleType TInt) -> return (SH.ReadVar (SH.VarIdent $ asId asym))
-          (SimpleType TDouble) -> return (SH.ReadVar (SH.VarIdent $ asId asym)) -- TODO: custom formatting
-          _ -> throwError $ GeneralError $ "Unsupported variable type in 'str: " <> show typ -- TODO: better error message
+      Just asym -> strVar typ asym
       Nothing -> throwError $ UndefinedSymbol sym
-  -- TODO: support evaluating subexpressions
-  _ -> throwError $ GeneralError "Unsupported parameter for 'str'" -- TODO: better error message
+  (TypedExpression typ expr) -> do
+    tmpSym <- generateTmpSym
+    prereq $ compileExpression expr $
+               \cExpr -> return $ SH.Assign $ SH.Var (asId tmpSym) cExpr
+    strVar typ tmpSym
 
   where
-    litString s = return ((SH.literal . B.fromString) s)
+    litString' = SH.literal . B.fromString
+    litString s = return $ litString' s
 
-str _ = throwError $ GeneralError "Invalid parameters for 'str'" -- TODO: better error message
+    strVar typ asym =
+      case typ of
+        (SimpleType TString) -> return (SH.ReadVar (SH.VarIdent $ asId asym))
+        (SimpleType TBool) -> boolToString asym
+        (SimpleType TInt) -> return (SH.ReadVar (SH.VarIdent $ asId asym))
+        (SimpleType TDouble) -> return (SH.ReadVar (SH.VarIdent $ asId asym))
+        _ -> throwError $ InvalidParameterTypeForPredefined "str" [typ]
+
+    boolToString asym = do
+      tmpSym <- generateTmpSym
+      let condExpr = "[[ ( \"$" <> asIdString asym <> "\" = \"0\" ) ]]"
+      let onTrue = SH.Assign $ SH.Var (asId tmpSym) $ litString' "true"
+      let onFalse = SH.Assign $ SH.Var (asId tmpSym) $ litString' "false"
+      prereq $ return $ SH.IfThenElse (SH.Annotated (SH.Lines [condExpr] []) SH.Empty) (noAnnotation onTrue) (noAnnotation onFalse)
+      return (SH.ReadVar (SH.VarIdent $ asId tmpSym))
+
+str _ ps = throwError $ InvalidParameterTypeForPredefined "str" (map texpType ps)

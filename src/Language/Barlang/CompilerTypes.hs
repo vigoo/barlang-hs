@@ -1,7 +1,7 @@
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE RecordWildCards      #-}
-{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 module Language.Barlang.CompilerTypes where
 
 import           Control.Monad.Except
@@ -13,6 +13,7 @@ import           Language.Barlang.Language
 import qualified Language.Bash             as SH
 import qualified Language.Bash.Annotations as SH
 import qualified Language.Bash.Syntax      as SH
+import           Text.Printf
 
 type Scope = String
 type BashStatement = SH.Statement SH.Lines
@@ -33,6 +34,7 @@ data CompilerError = InvalidFunctionContext
                    | UnsupportedTypeInBooleanExpression ExtendedType
                    | InvalidUseOfPredefinedFunction SymbolName
                    | InvalidConditionalExpressionTypeForIf ExtendedType
+                   | InvalidParameterTypeForPredefined SymbolName [ExtendedType]
                    | GeneralError String
                      deriving (Show)
 
@@ -99,3 +101,21 @@ findType Context{..} sym = Map.lookup sym ctxSymbolTypes
 
 findTypeM :: (MonadState Context m) => SymbolName -> m (Maybe ExtendedType)
 findTypeM sym = gets $ \ctx -> findType ctx sym
+
+generateTmpSym :: (MonadState Context m) => m AssignedSymbol
+generateTmpSym = do
+  ctx <- get
+  let next = 1 + ctxLastTmp ctx
+      idString = B.fromString $ printf "%s_tmp%d" (ctxScope ctx) next
+  put $ ctx { ctxLastTmp = next }
+  return $ AssignedSymbol (printf "tmp%d" next) idString $ SH.Identifier idString
+
+cloneContext :: (MonadState Context m) => m Context
+cloneContext = get
+
+runChildContext :: Context -> CompilerMonad a -> CompilerMonad a
+runChildContext ctx' f = let res = evalState (runExceptT f) ctx'
+                         in case res of
+                              Right v -> return v
+                              Left err -> throwError err
+

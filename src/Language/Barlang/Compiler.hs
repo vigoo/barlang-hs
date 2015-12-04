@@ -1,5 +1,5 @@
-{-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE OverloadedStrings    #-}
@@ -13,21 +13,21 @@ import           Control.Monad.Except
 import           Control.Monad.State
 import           Control.Monad.Writer.Lazy
 import           Data.Binary.Builder
-import qualified Data.ByteString.Lazy.UTF8   as BL
-import qualified Data.ByteString.UTF8        as B
+import qualified Data.ByteString.Lazy.UTF8      as BL
+import qualified Data.ByteString.UTF8           as B
 import           Data.Function
-import qualified Data.Map                    as Map
+import qualified Data.Map                       as Map
 import           Data.Maybe
 import           Data.Monoid
-import qualified Data.Set                    as Set
+import qualified Data.Set                       as Set
 import           Debug.Trace
 import           Language.Barlang.CompilerTypes
 import           Language.Barlang.Language
 import           Language.Barlang.Predefined
-import qualified Language.Bash               as SH
-import qualified Language.Bash.Annotations   as SH
-import qualified Language.Bash.PrettyPrinter as SHPP
-import qualified Language.Bash.Syntax        as SH
+import qualified Language.Bash                  as SH
+import qualified Language.Bash.Annotations      as SH
+import qualified Language.Bash.PrettyPrinter    as SHPP
+import qualified Language.Bash.Syntax           as SH
 import           Text.Printf
 import           Text.ShellEscape
 
@@ -121,12 +121,6 @@ replacePredefsExpr (EUnaryOp op e) = EUnaryOp op (replacePredefsExpr e)
 replacePredefsExpr (EBinOp op a b) = EBinOp op (replacePredefsExpr a) (replacePredefsExpr b)
 replacePredefsExpr e = e
 
-runChildContext :: Context -> CompilerMonad a -> CompilerMonad a
-runChildContext ctx' f = let res = evalState (runExceptT f) ctx'
-                         in case res of
-                              Right v -> return v
-                              Left err -> throwError err
-
 initialContext :: Context
 initialContext = Context { ctxScope = ""
                          , ctxSymbols = Map.empty
@@ -158,14 +152,6 @@ createIdentifierM sym = do
   let (ctx', asym) = createIdentifier ctx sym
   put ctx'
   return asym
-
-generateTmpSym :: (MonadState Context m) => m AssignedSymbol
-generateTmpSym = do
-  ctx <- get
-  let next = 1 + ctxLastTmp ctx
-      idString = B.fromString $ printf "%s_tmp%d" (ctxScope ctx) next
-  put $ ctx { ctxLastTmp = next }
-  return $ AssignedSymbol (printf "tmp%d" next) idString $ SH.Identifier idString
 
 withFunctionHeader :: Context -> [ParamDef] -> Type -> BashStatement -> BashStatement
 withFunctionHeader ctx@Context{..} params rettype stIn = SH.Sequence (noAnnotation funHeader) (noAnnotation stIn)
@@ -213,6 +199,10 @@ compileTestExpr = \case
       return $ "! " <> e'
     EBinOp BOEq a b -> binaryTestExpr a b "="
     EBinOp BONeq a b -> binaryTestExpr a b "!="
+    EBinOp BOLess a b -> binaryTestExpr a b "<"
+    EBinOp BOLessEq a b -> binaryTestExpr a b "<="
+    EBinOp BOGreater a b -> binaryTestExpr a b ">"
+    EBinOp BOGreaterEq a b -> binaryTestExpr a b ">="
 
     e -> do
       nr <- numericSubExpr e
@@ -266,6 +256,13 @@ compileIntegerExpr expr = case expr of
   EBinOp BOSub a b -> compileNumericBinaryOp a b "-"
   EBinOp BOMul a b -> compileNumericBinaryOp a b "*"
   EBinOp BODiv a b -> compileNumericBinaryOp a b "/"
+  EVar sym -> do
+    r <- findSymbolM sym
+    case r of
+     Just asym ->
+       return $ "$" <> asIdString asym
+     Nothing ->
+       throwError $ UndefinedSymbol sym
   _ -> throwError $ NotSupported (show expr)
  where
    compileNumericBinaryOp a b op = do
@@ -288,6 +285,13 @@ compileDoubleExpr expr = case expr of
   EBinOp BOSub a b -> compileNumericBinaryOp a b "-"
   EBinOp BOMul a b -> compileNumericBinaryOp a b "*"
   EBinOp BODiv a b -> compileNumericBinaryOp a b "/"
+  EVar sym -> do
+    r <- findSymbolM sym
+    case r of
+     Just asym ->
+       return $ "$" <> asIdString asym
+     Nothing ->
+       throwError $ UndefinedSymbol sym
   _ -> throwError $ NotSupported (show expr)
  where
    compileNumericBinaryOp a b op = do
@@ -372,7 +376,7 @@ compileExpr expr =
         case predefValue (predefined Map.! sym) of
           CustomExpression fn -> do
             paramTypes <- mapM typeCheckExpr params
-            fn $ zipWith TypedExpression paramTypes params
+            fn (\e c -> compileExpression' e compileExpr c) $ zipWith TypedExpression paramTypes params
           _ -> throwError $ GeneralError "Impossible state (isCustomPredefinedExpression failure)"
 
       EApply funRefExpr params -> do
@@ -384,10 +388,6 @@ compileExpr expr =
                   (noAnnotation $ SH.SimpleCommand funRef $ (SH.literal (asIdString tmpSym)):cParams)
                 return $ SH.ReadVar (SH.VarIdent $ asId tmpSym)
 
-      EBinOp BOLess _ _ -> throwError $ NotSupported "<"
-      EBinOp BOLessEq _ _ -> throwError $ NotSupported "<="
-      EBinOp BOGreater _ _ -> throwError $ NotSupported ">"
-      EBinOp BOGreaterEq _ _ -> throwError $ NotSupported ">="
       _ -> do
         br <- boolSubExpr expr
         nr <- numericSubExpr expr
@@ -580,9 +580,6 @@ funContext ctx@Context{..} name params = paramCtx { ctxSymbolTypes = ctxSymbolTy
 
 funContextM :: SymbolName -> [ParamDef] -> CompilerMonad Context
 funContextM name params = gets $ \ctx -> funContext ctx name params
-
-cloneContext :: CompilerMonad Context
-cloneContext = get
 
 typeCheckSt :: Statement -> CompilerMonad ExtendedType
 typeCheckSt st =

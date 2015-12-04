@@ -19,6 +19,5 @@ TAGS
 cabal.config
 cabal.sandbox.config
 dist
-test
 .idea
 .stack-work

@@ -1,0 +1,58 @@
+def print(s: string): unit
+	> "echo" s;
+end;
+
+inline def generic_print[T](s: T): unit
+	> "echo" (str(s));
+end;
+
+def twice[T](fn: (T) -> unit, p: T): unit
+	fn(p);
+	fn(p);
+end;
+
+def id[T](a: T): T
+	return a;
+end;
+
+val a = "kacsa";
+val b = "kutya";
+val x = true;
+val y = a == b;
+val z = x or (not (x and y));
+
+val w = id("something");
+twice(print, w);
+
+print("hello world");
+twice(print, ":)");
+
+val n = 10 + 20;
+val n2 = ((2 * 3) - 1) * 2;
+val n3 = 4 / 2 - 2 * 1;
+val n4 = (1 + ((0.1) * 2 + (0.3))) / 2;
+
+val test0 = (1 + 3) == 2;
+val test = ((0.25 * 2) == (10.0 - 5)) and (not (3 == 2));
+
+print(str(w));
+print(str(n));
+print(str(n2));
+print(str(n3));
+print(str(n4));
+print(str(test));
+
+generic_print(w);
+generic_print(n);
+generic_print(n2);
+generic_print(n3);
+generic_print(n4);
+generic_print(test);
+
+if (n == 40)
+then
+	print("n is 40!");
+else
+	print("n is NOT 40!");
+end;
+

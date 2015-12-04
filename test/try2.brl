@@ -1,0 +1,44 @@
+def print(s: string): unit
+	> "echo" s;
+end;
+
+inline def generic_print[T](s: T): unit
+	> "echo" (str(s));
+end;
+
+print(str("string literal"));
+print(str(10));
+print(str(0.5));
+print(str(true));
+
+val s = "string literal 2";
+val i = 20;
+val d = 0.99;
+val b = false;
+
+print(str(s));
+print(str(i));
+print(str(d));
+print(str(b));
+
+print(str(20 + 30 + i));
+print(str(d * i));
+print(str(b or (5 > 4)));
+
+print("GENERIC VERSION");
+
+generic_print("string literal");
+generic_print(10);
+generic_print(0.5);
+generic_print(true);
+
+generic_print(s);
+generic_print(i);
+generic_print(d);
+generic_print(b);
+
+generic_print(20 + 30 + i);
+generic_print(d * i);
+generic_print(b or (5 > 4));
+
+print("END");
