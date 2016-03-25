@@ -14,7 +14,6 @@ import           Control.Monad.IO.Class
 import qualified Data.HashSet                 as HashSet
 import           Data.Maybe
 import           Data.Monoid
-import           Data.UUID
 import           System.IO
 import           Text.Parser.Char
 import           Text.Parser.Combinators
@@ -48,6 +47,7 @@ idStyle = emptyIdents { _styleReserved = set [ "string"
                                              , "if"
                                              , "then"
                                              , "else"
+                                             , "fn"
                                              , "true"
                                              , "false"
                                              , "and"
@@ -125,12 +125,6 @@ boolLit = EBoolLit <$> (highlight Constant $ true <|> false) <?> "boolean litera
     true = token $ reserved "true" >> return True
     false = token $ reserved "false" >> return False
 
-intLit :: Parser Expression
-intLit = EIntLit . fromInteger <$> highlight Constant integer <?> "integer literal"
-
-doubleLit :: Parser Expression
-doubleLit = EDoubleLit <$> highlight Constant double <?> "double literal"
-
 numLit :: Parser Expression
 numLit = (integerOrDouble >>= \case
   Left i -> return $ EIntLit $ fromInteger i
@@ -147,8 +141,50 @@ funApplication = try $ EApply <$> variable <*> paramList
   where
     paramList = parens $ commaSep (expression False)
 
+defKeyword :: Parser ()
+defKeyword = token $ reserved "def"
+
+ifKeyword :: Parser ()
+ifKeyword = token $ reserved "if"
+
+thenKeyword :: Parser ()
+thenKeyword = token $ reserved "then"
+
+elseKeyword :: Parser ()
+elseKeyword = token $ reserved "else"
+
+fnKeyword :: Parser ()
+fnKeyword = token $ reserved "fn"
+
+endKeyword :: Parser ()
+endKeyword = token $ reserved "end"
+
+typSepSym :: Parser ()
+typSepSym = token $ reserved ":"
+
+paramDef :: Parser ParamDef
+paramDef = do name <- identifier
+              typSepSym
+              typ <- typeExpr
+              return $ ParamDef (name, typ)
+
+paramDefs :: Parser [ParamDef]
+paramDefs = parens $ commaSep paramDef <?> "parameter list definition"
+
+body :: Parser () -> Parser [Statement]
+body fin = (try fin >> return [])
+         <|> do x <- statement <* semi
+                xs <- body fin
+                return (x:xs)
+
+lambda :: Parser Expression
+lambda = try $ ELambda <$> (fnKeyword *> typeParams) <*> paramDefs <*> retType <*> (collapse <$> body endKeyword <?> "lambda function body")
+  where
+    retType = typSepSym *> typeExpr <?> "return type definition"
+
 term :: Bool -> Parser Expression
 term parfun = parens (expression False)
+        <|> lambda
         <|> stringLit
         <|> boolLit
         <|> numLit
@@ -198,15 +234,6 @@ ifthenelse :: Parser Statement
 ifthenelse =     try (SIf <$> (ifKeyword *> expression False <* thenKeyword) <*> (collapse <$> body endKeyword) <*> pure SNoOp)
              <|> (SIf <$> (ifKeyword *> expression False <* thenKeyword) <*> (collapse <$> body elseKeyword) <*> (collapse <$> body endKeyword))
              <?> "conditional statement"
-  where
-    ifKeyword = token $ reserved "if"
-    thenKeyword = token $ reserved "then"
-    endKeyword = token $ reserved "end"
-    elseKeyword = token $ reserved "else"
-    body fin = (try fin >> return [])
-               <|> do x <- statement <* semi
-                      xs <- body fin
-                      return $ x:xs
 
 call :: Parser Statement
 call = try (SCall <$> ((expression True <?> "function expression") <|> (variable <?> "function name"))
@@ -229,24 +256,12 @@ deffun = inlineKeyword >>= \inline ->
            <*> typeParams
            <*> paramDefs
            <*> retType
-           <*> (collapse <$> body <?> "function body")
+           <*> (collapse <$> body endKeyword <?> "function body")
   ) <?> "function definition"
 
   where
     inlineKeyword = liftM (fromMaybe False) $ (optional ((token $ reserved "inline") >> return True)) <?> "inline keyword"
-    defKeyword = token $ reserved "def"
-    endKeyword = token $ reserved "end"
-    typSepSym = token $ reserved ":"
-    paramDef = do name <- identifier
-                  typSepSym
-                  typ <- typeExpr
-                  return $ ParamDef (name, typ)
-    paramDefs = parens $ commaSep paramDef <?> "parameter list definition"
     retType = typSepSym *> typeExpr <?> "return type definition"
-    body = (try endKeyword >> return [])
-           <|> do x <- statement <* semi
-                  xs <- body
-                  return (x:xs)
 
 statement :: Parser Statement
 statement = choice [ ret

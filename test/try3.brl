@@ -1,0 +1,7 @@
+val n = 5;
+val f = fn (x: int): int
+          return n * x;
+        end;
+
+val r = f(10);
+> "echo" (str(r));

@@ -15,8 +15,6 @@ import           Data.Monoid
 import           Language.Barlang.CompilerTypes
 import           Language.Barlang.Language
 import qualified Language.Bash                  as SH
-import qualified Language.Bash.Annotations      as SH
-import qualified Language.Bash.Syntax           as SH
 
 type CompileExpressionFn = Expression -> (BashExpression -> CompilerMonad BashStatement) -> CompilerMonad BashStatement
 
@@ -54,7 +52,7 @@ predefined = Map.fromList
 
 str :: CompileExpressionFn -> [TypedExpression] -> ExpressionCompilerMonad BashExpression
 str compileExpression [param] = case param of
-  (TypedExpression (SimpleType TString) (EStringLit str)) -> litString str
+  (TypedExpression (SimpleType TString) (EStringLit s)) -> litString s
   (TypedExpression (SimpleType TBool) (EBoolLit True)) -> litString "true"
   (TypedExpression (SimpleType TBool) (EBoolLit False)) -> litString "false"
   (TypedExpression (SimpleType TInt) (EIntLit v)) -> litString (show v)

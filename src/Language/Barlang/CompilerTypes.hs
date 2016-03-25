@@ -11,7 +11,6 @@ import qualified Data.ByteString.UTF8      as B
 import qualified Data.Map                  as Map
 import           Language.Barlang.Language
 import qualified Language.Bash             as SH
-import qualified Language.Bash.Annotations as SH
 import qualified Language.Bash.Syntax      as SH
 import           Text.Printf
 

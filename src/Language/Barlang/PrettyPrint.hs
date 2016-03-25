@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Language.Barlang.PrettyPrint(PrettyPrint(..)
                                ,escape
@@ -21,7 +22,7 @@ escapeChar ch = case ch of
   _ -> [ch]
 
 escape :: String -> String
-escape = concat . (map escapeChar)
+escape = concatMap escapeChar
 
 parensIfNotVar :: Expression -> Code
 parensIfNotVar expr = case expr of
@@ -55,6 +56,12 @@ instance Codeable Expression where
              EVar sym -> code sym
              ESysVar sym -> "$"  <+> sym
              EApply fnExpr pExprs -> parenthesis $ fnExpr <+> parenthesis (interleave ", " (codeList  pExprs))
+             ELambda tps pdefs rett body ->
+                   (case tps of
+                      [] -> code "fn"
+                      _ -> code "fn" <+> (square $ interleave ", " (codeList tps))) <++>
+                   (parenthesis (interleave ", " (codeList pdefs)) <+> ":" <++> rett) <->
+                   indent 4 body <-> "end"
              EUnaryOp UONot e -> code "not" <++> (parenthesis $ code e)
              EBinOp BOAnd a b -> binary "and" a b
              EBinOp BOOr a b -> binary "or" a b
@@ -68,6 +75,7 @@ instance Codeable Expression where
              EBinOp BOLessEq a b -> binary "<=" a b
              EBinOp BOGreater a b -> binary ">" a b
              EBinOp BOGreaterEq a b -> binary ">=" a b
+             EPredefined sym -> code sym
        where
          binary op a b = parenthesis $ (parenthesis $ code a) <++> op <++> (parenthesis $ code b)
 

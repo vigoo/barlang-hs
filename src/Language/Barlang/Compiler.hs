@@ -18,14 +18,12 @@ import qualified Data.ByteString.UTF8           as B
 import           Data.Function
 import qualified Data.Map                       as Map
 import           Data.Maybe
-import           Data.Monoid
 import qualified Data.Set                       as Set
 import           Debug.Trace
 import           Language.Barlang.CompilerTypes
 import           Language.Barlang.Language
 import           Language.Barlang.Predefined
 import qualified Language.Bash                  as SH
-import qualified Language.Bash.Annotations      as SH
 import qualified Language.Bash.PrettyPrinter    as SHPP
 import qualified Language.Bash.Syntax           as SH
 import           Text.Printf
@@ -367,7 +365,7 @@ compileExpr expr =
           Just (PredefinedValue{..}) ->
             case predefValue of
               PredefinedExpression e -> compileExpr e
-              CustomExpression fn -> throwError $ InvalidUseOfPredefinedFunction sym
+              CustomExpression _ -> throwError $ InvalidUseOfPredefinedFunction sym
           Nothing -> throwError $ UndefinedSymbol sym
 
       ESysVar sym -> return $ SH.ReadVar (SH.VarIdent ((SH.Identifier . B.fromString) sym))
@@ -409,7 +407,7 @@ compileSt st =
                        compileExpression' expr compileExpr $
                          \cExpr -> return $ SH.Assign $ SH.Var (asId asym) cExpr
 
-      SDefFun sym props tps pdef rettype stIn -> do
+      SDefFun sym _props _tps pdef rettype stIn -> do
               r <- findSymbolM sym
               case r of
                 Just _ -> throwError $ SymbolAlreadyDefined sym
@@ -446,8 +444,8 @@ compileSt st =
         fContext <- cloneContext
         cTBody <- runChildContext tContext (compileSt tbody)
         cFBody <- runChildContext fContext (compileSt fbody)
-        let st = SH.IfThenElse (SH.Annotated (SH.Lines [condExpr] []) SH.Empty) (noAnnotation cTBody) (noAnnotation cFBody)
-        prereqs <> return st
+        let result = SH.IfThenElse (SH.Annotated (SH.Lines [condExpr] []) SH.Empty) (noAnnotation cTBody) (noAnnotation cFBody)
+        prereqs <> return result
 
 unifyTypeVars :: (MonadState Context m, MonadError CompilerError m) => [TypeParam] -> [ExtendedType] -> [Type] -> m (Map.Map SymbolName Type)
 unifyTypeVars typeParams actualTypes typeDefs = do
@@ -496,6 +494,10 @@ typeCheckExpr expr =
           Nothing -> throwError $ CannotInferType sym
 
       ESysVar _ -> return $ SimpleType TString
+
+      ELambda tps params rett _body ->
+        -- TODO: typecheck body
+        return $ SimpleType $ TFun tps (map (\(ParamDef (_, t)) -> t) params) rett
 
       EApply funRefExpr params -> do
           let funName = trace ("funRefExpr: " <> show funRefExpr <> "; params: " <> show params) $ show funRefExpr
@@ -591,7 +593,7 @@ typeCheckSt st =
           storeTypeM sym typ
           return $ SimpleType TUnit
 
-      SDefFun sym props tps pdef rettype stIn -> do
+      SDefFun sym _props tps pdef rettype stIn -> do
           storeTypeM sym (SimpleType $ funType tps pdef rettype)
           -- TODO: add type params to context
           funCtx <- funContextM sym pdef

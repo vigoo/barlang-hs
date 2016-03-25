@@ -60,6 +60,8 @@ defineFunction (SDefFun name props tps ps rett body) =
           , dfInlined = fpInline props
           }
 
+defineFunction _ = error "defineFunction called for non-function statement"
+
 replaceSubExpression :: Expression -> Expression -> Expression -> Expression
 replaceSubExpression from to x =
   if x == from

@@ -41,6 +41,7 @@ data Expression = EStringLit String
                 | EApply Expression [Expression]
                 | EUnaryOp UnaryOperator Expression
                 | EBinOp BinaryOperator Expression Expression
+                | ELambda [TypeParam] [ParamDef] Type Statement
                   deriving (Show, Eq)
 
 newtype ParamDef = ParamDef (SymbolName, Type)
