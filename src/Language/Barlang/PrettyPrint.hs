@@ -104,6 +104,10 @@ instance Codeable Statement where
                           then "else" <-> indent 4 f
                           else noCode) <->
                          "end;"
+             SWhile c b -> "while" <++> c <->
+                          indent 4 b <->
+                          "end;"
+             SUpdateVar sym expr -> sym <++> "<-" <++> expr <+> ";"
              SNoOp -> noCode
 
 

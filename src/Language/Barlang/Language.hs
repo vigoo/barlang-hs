@@ -59,6 +59,8 @@ data SingleStatement = SSVarDecl SymbolName Expression
                      | SSCall Expression [Expression]
                      | SSRun Expression [Expression] -- TODO: this should be an expression returning a process value
                      | SSIf Expression Statement Statement
+                     | SSWhile Expression Statement
+                     | SSUpdateVar SymbolName Expression
                      | SSReturn Expression
                      deriving (Show, Eq)
 
@@ -70,6 +72,8 @@ data Statement = SVarDecl SymbolName Expression
                | SRun Expression [Expression] -- TODO: this should be an expression returning a process value
                | SReturn Expression
                | SIf Expression Statement Statement
+               | SWhile Expression Statement
+               | SUpdateVar SymbolName Expression
                | SNoOp
                  deriving (Show)
 
@@ -80,6 +84,8 @@ normalize (SCall n p) = [SSCall n p]
 normalize (SRun n p) = [SSRun n p]
 normalize (SReturn e) = [SSReturn e]
 normalize (SIf c t f) = [SSIf c t f]
+normalize (SWhile c b) = [SSWhile c b]
+normalize (SUpdateVar s e) = [SSUpdateVar s e]
 normalize (SNoOp) = []
 normalize (SSequence s1 s2) = concatMap normalize [s1, s2]
 

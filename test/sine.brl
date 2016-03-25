@@ -1,0 +1,46 @@
+inline def print[T](s: T): unit
+	> "echo" (str(s));
+end;
+
+inline def cls(): unit
+    > "tput" "clear";
+end;
+
+inline def color(fg: int, bg: int): unit
+    > "tput" "setf" (str(fg));
+	> "tput" "setb" (str(bg));
+end;
+
+inline def gotoxy(x: int, y: int): unit
+    > "tput" "cup" (str(y)) (str(x));
+end;
+
+inline def waitkey(): unit
+    > "read";
+end;
+
+inline def hideCursor(): unit
+    > "tput" "civis";
+end;
+
+
+hideCursor();
+cls();
+color(6, 0);
+
+val t = 0;
+while (t < 100)
+    val i = 0;
+    while (i < 200)
+	    val y = sin((pi / 30.0) * (i + t)) * 10.0;
+	    gotoxy(i, 10 + toInt(y));
+	    print("*");
+	    i <- i + 1;
+    end;
+	t <- t + 1;
+	cls();
+end;
+
+waitkey();
+
+

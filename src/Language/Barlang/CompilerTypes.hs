@@ -9,6 +9,7 @@ import           Control.Monad.State
 import           Control.Monad.Writer.Lazy
 import qualified Data.ByteString.UTF8      as B
 import qualified Data.Map                  as Map
+import           Debug.Trace
 import           Language.Barlang.Language
 import qualified Language.Bash             as SH
 import qualified Language.Bash.Syntax      as SH
@@ -33,7 +34,9 @@ data CompilerError = InvalidFunctionContext
                    | UnsupportedTypeInBooleanExpression ExtendedType
                    | InvalidUseOfPredefinedFunction SymbolName
                    | InvalidConditionalExpressionTypeForIf ExtendedType
+                   | InvalidConditionalExpressionTypeForWhile ExtendedType
                    | InvalidParameterTypeForPredefined SymbolName [ExtendedType]
+                   | VariableUpdateTypeMismatch ExtendedType ExtendedType
                    | GeneralError String
                      deriving (Show)
 
@@ -118,3 +121,8 @@ runChildContext ctx' f = let res = evalState (runExceptT f) ctx'
                               Right v -> return v
                               Left err -> throwError err
 
+
+dumpState :: (MonadState Context m) => m ()
+dumpState = do
+  ctx <- get
+  traceShow ctx $ return ()

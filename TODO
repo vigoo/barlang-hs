@@ -12,7 +12,7 @@
 * Closure
 - Process
 - Arrays, command line args
-- Loop
+* Loop
 - Encode/decode mes source to bash as comment
 - Traps
 - Import

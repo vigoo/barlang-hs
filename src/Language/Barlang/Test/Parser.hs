@@ -141,6 +141,7 @@ instance Arbitrary Statement where
                     , SRun <$> arbitrary <*> arbitrary
                     , SReturn <$> arbitrary
                     , SIf <$> arbitrary <*> arbitrary <*> arbitrary
+                    , SWhile <$> arbitrary <*> arbitrary
                     , pure SNoOp
                     ]
 

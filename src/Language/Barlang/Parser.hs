@@ -53,6 +53,8 @@ idStyle = emptyIdents { _styleReserved = set [ "string"
                                              , "and"
                                              , "or"
                                              , "not"
+                                             , "while"
+                                             , "<-"
                                              , "==", "!=", "<", ">", "<=", ">="
                                              , "*", "/", "-", "+"
                                              ]
@@ -153,6 +155,9 @@ thenKeyword = token $ reserved "then"
 elseKeyword :: Parser ()
 elseKeyword = token $ reserved "else"
 
+whileKeyword :: Parser ()
+whileKeyword = token $ reserved "while"
+
 fnKeyword :: Parser ()
 fnKeyword = token $ reserved "fn"
 
@@ -235,6 +240,10 @@ ifthenelse =     try (SIf <$> (ifKeyword *> expression False <* thenKeyword) <*>
              <|> (SIf <$> (ifKeyword *> expression False <* thenKeyword) <*> (collapse <$> body elseKeyword) <*> (collapse <$> body endKeyword))
              <?> "conditional statement"
 
+while :: Parser Statement
+while =     try (SWhile <$> (whileKeyword *> expression False <?> "loop condition") <*> (collapse <$> body endKeyword))
+        <?> "while loop"
+
 call :: Parser Statement
 call = try (SCall <$> ((expression True <?> "function expression") <|> (variable <?> "function name"))
                   <*> paramList
@@ -263,11 +272,16 @@ deffun = inlineKeyword >>= \inline ->
     inlineKeyword = liftM (fromMaybe False) $ (optional ((token $ reserved "inline") >> return True)) <?> "inline keyword"
     retType = typSepSym *> typeExpr <?> "return type definition"
 
+varUpdate :: Parser Statement
+varUpdate = try $ SUpdateVar <$> identifier <*> (token (reserved "<-") *> expression False) <?> "variable update"
+
 statement :: Parser Statement
 statement = choice [ ret
                    , run
+                   , varUpdate
                    , val
                    , ifthenelse
+                   , while
                    , call
                    , deffun
                    , nop

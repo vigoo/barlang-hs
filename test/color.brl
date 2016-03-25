@@ -1,0 +1,31 @@
+inline def print[T](s: T): unit
+	> "echo" (str(s));
+end;
+
+inline def cls(): unit
+    > "tput" "clear";
+end;
+
+inline def color(fg: int, bg: int): unit
+    > "tput" "setf" (str(fg));
+	> "tput" "setb" (str(bg));
+end;
+
+inline def gotoxy(x: int, y: int): unit
+    > "tput" "cup" (str(y)) (str(x));
+end;
+
+val green = 2;
+val brown = 6;
+
+cls();
+color(brown, green);
+
+val i = 10;
+while (i > 0)
+    gotoxy(((10 - i) * 3), 10 - i);
+    print(str(i));
+	i <- i - 1;
+end;
+
+

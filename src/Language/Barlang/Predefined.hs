@@ -48,7 +48,34 @@ predefined :: Map.Map SymbolName PredefinedValue
 predefined = Map.fromList
   [ predef "pi" TDouble (EDoubleLit pi)
   , custom "str" (TFun [TypeParam "T"] [TVar "T"] TString) str
+  , custom "sin" (TFun [] [TDouble] TDouble) (bcfun "sin" "s")
+  , custom "cos" (TFun [] [TDouble] TDouble) (bcfun "cos" "c")
+  , custom "toInt" (TFun [] [TDouble] TInt) int
   ]
+
+int :: CompileExpressionFn -> [TypedExpression] -> ExpressionCompilerMonad BashExpression
+int compileExpression [TypedExpression (SimpleType TDouble) expr] = do
+  tmpSym <- generateTmpSym
+  tmpSym' <- generateTmpSym
+  prereq $ compileExpression expr $ \cExpr ->
+    return $ SH.Assign $ SH.Var (asId tmpSym) cExpr
+  prereq $
+    return $ SH.Sequence (SH.Annotated (SH.Lines [(asIdString tmpSym') <> "=$(printf '%.0f' $" <> (asIdString tmpSym) <> ")"] []) SH.Empty) (noAnnotation SH.Empty)
+  return (SH.ReadVar (SH.VarIdent $ asId tmpSym'))
+
+int _ ps = throwError $ InvalidParameterTypeForPredefined "int" (map texpType ps)
+
+bcfun :: String -> String -> CompileExpressionFn -> [TypedExpression] -> ExpressionCompilerMonad BashExpression
+bcfun _ fun compileExpression [TypedExpression (SimpleType TDouble) expr] = do
+  tmpSym <- generateTmpSym
+  prereq $ compileExpression expr $
+    \cExpr -> return $ SH.Assign $ SH.Var (asId tmpSym) cExpr
+
+  tmpSym' <- generateTmpSym
+  prereq $ return $ SH.Sequence (SH.Annotated (SH.Lines [(asIdString tmpSym') <> "=$(bc -l <<< \"" <> B.fromString fun <> "($" <> (asIdString tmpSym) <> ")\")"] []) SH.Empty) (noAnnotation SH.Empty)
+  return (SH.ReadVar (SH.VarIdent $ asId tmpSym'))
+
+bcfun n _ _ ps = throwError $ InvalidParameterTypeForPredefined n (map texpType ps)
 
 str :: CompileExpressionFn -> [TypedExpression] -> ExpressionCompilerMonad BashExpression
 str compileExpression [param] = case param of

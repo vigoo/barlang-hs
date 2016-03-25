@@ -109,6 +109,8 @@ replacePredefs (SCall e0 es) = SCall (replacePredefsExpr e0) (map replacePredefs
 replacePredefs (SRun e0 es) = SRun (replacePredefsExpr e0) (map replacePredefsExpr es)
 replacePredefs (SReturn e) = SReturn (replacePredefsExpr e)
 replacePredefs (SIf cond tbody fbody) = SIf (replacePredefsExpr cond) (replacePredefs tbody) (replacePredefs fbody)
+replacePredefs (SWhile cond body) = SWhile (replacePredefsExpr cond) (replacePredefs body)
+replacePredefs (SUpdateVar n x) = SUpdateVar n (replacePredefsExpr x)
 replacePredefs SNoOp = SNoOp
 
 replacePredefsExpr :: Expression -> Expression
@@ -179,28 +181,28 @@ compileTestExpr = \case
           Just (SimpleType TBool) ->
             return $ "( \"$" <> asIdString asym <> "\" = \"0\" )"
           Just (SimpleType TInt) ->
-            return $ "\"" <> asIdString asym <> "\""
+            return $ "\"$" <> asIdString asym <> "\""
           Just (SimpleType TDouble) ->
-            return $ "\"" <> asIdString asym <> "\""
+            return $ "\"$" <> asIdString asym <> "\""
           Just (SimpleType TString) ->
-            return $ "\"" <> asIdString asym <> "\""
+            return $ "\"$" <> asIdString asym <> "\""
           Just t' ->
             throwError $ UnsupportedTypeInBooleanExpression t'
           Nothing ->
             throwError $ CannotInferType sym
        Nothing ->
          throwError $ UndefinedSymbol sym
-    EBinOp BOAnd a b -> binaryTestExpr a b "&&"
-    EBinOp BOOr a b -> binaryTestExpr a b "||"
+    EBinOp BOAnd a b -> binaryTestExpr a b "-a"
+    EBinOp BOOr a b -> binaryTestExpr a b "-o"
     EUnaryOp UONot e -> do
       e' <- compileTestExpr e
       return $ "! " <> e'
-    EBinOp BOEq a b -> binaryTestExpr a b "="
-    EBinOp BONeq a b -> binaryTestExpr a b "!="
-    EBinOp BOLess a b -> binaryTestExpr a b "<"
-    EBinOp BOLessEq a b -> binaryTestExpr a b "<="
-    EBinOp BOGreater a b -> binaryTestExpr a b ">"
-    EBinOp BOGreaterEq a b -> binaryTestExpr a b ">="
+    EBinOp BOEq a b -> binaryTestExpr a b "-eq"
+    EBinOp BONeq a b -> binaryTestExpr a b "-ne"
+    EBinOp BOLess a b -> binaryTestExpr a b "-lt"
+    EBinOp BOLessEq a b -> binaryTestExpr a b "-le"
+    EBinOp BOGreater a b -> binaryTestExpr a b "-gt"
+    EBinOp BOGreaterEq a b -> binaryTestExpr a b "-ge"
 
     e -> do
       nr <- numericSubExpr e
@@ -237,7 +239,7 @@ compileBoolExpr expr = case expr of
     return $ e1 <> " || " <> e2
   _ -> do
     e' <- compileTestExpr expr
-    return $ "[[ " <> e' <> " ]]"
+    return $ "[ " <> e' <> " ]"
 
 boolTempVar :: Expression -> ExpressionCompilerMonad AssignedSymbol
 boolTempVar expr = do
@@ -254,6 +256,12 @@ compileIntegerExpr expr = case expr of
   EBinOp BOSub a b -> compileNumericBinaryOp a b "-"
   EBinOp BOMul a b -> compileNumericBinaryOp a b "*"
   EBinOp BODiv a b -> compileNumericBinaryOp a b "/"
+  EApply _ _ -> do
+    cExpr <- compileExpr expr
+    tmpSym <- generateTmpSym
+    prereq $ return $ SH.Sequence
+      (noAnnotation $ SH.Assign $ SH.Var (asId tmpSym) cExpr) (noAnnotation SH.Empty)
+    return $ "$" <> asIdString tmpSym
   EVar sym -> do
     r <- findSymbolM sym
     case r of
@@ -283,6 +291,14 @@ compileDoubleExpr expr = case expr of
   EBinOp BOSub a b -> compileNumericBinaryOp a b "-"
   EBinOp BOMul a b -> compileNumericBinaryOp a b "*"
   EBinOp BODiv a b -> compileNumericBinaryOp a b "/"
+  EApply _ _ -> extractSubExpression expr
+  EPredefined sym ->
+    case Map.lookup sym predefined of
+      Just (PredefinedValue{..}) ->
+        case predefValue of
+          PredefinedExpression e -> extractSubExpression e
+          CustomExpression _ -> throwError $ InvalidUseOfPredefinedFunction sym
+      Nothing -> throwError $ UndefinedSymbol sym
   EVar sym -> do
     r <- findSymbolM sym
     case r of
@@ -296,6 +312,13 @@ compileDoubleExpr expr = case expr of
     e1 <- compileDoubleExpr a
     e2 <- compileDoubleExpr b
     return $ "(" <> e1 <> ") " <> op <> " (" <> e2 <> ")"
+
+   extractSubExpression e = do
+     cExpr <- compileExpr e
+     tmpSym <- generateTmpSym
+     prereq $ return $ SH.Sequence
+       (noAnnotation $ SH.Assign $ SH.Var (asId tmpSym) cExpr) (noAnnotation SH.Empty)
+     return $ "$" <> asIdString tmpSym
 
 doubleTempVar :: Expression -> ExpressionCompilerMonad AssignedSymbol
 doubleTempVar expr = do
@@ -447,6 +470,22 @@ compileSt st =
         let result = SH.IfThenElse (SH.Annotated (SH.Lines [condExpr] []) SH.Empty) (noAnnotation cTBody) (noAnnotation cFBody)
         prereqs <> return result
 
+      SWhile cond body -> do
+        (condExpr, prereqs) <- runWriterT (compileBoolExpr cond)
+        childContext <- cloneContext
+        cBody <- runChildContext childContext (typeCheckSt body >> compileSt body)
+        let result = SH.While (SH.Annotated (SH.Lines [condExpr] []) SH.Empty) (noAnnotation cBody)
+        prereqs <> return result
+
+      SUpdateVar sym expr -> do
+        r <- findSymbolM sym
+        case r of
+          Just asym -> do
+            compileExpression' expr compileExpr $
+              \cExpr -> return $ SH.Assign $ SH.Var (asId asym) cExpr
+          Nothing ->
+            throwError $ UndefinedSymbol sym
+
 unifyTypeVars :: (MonadState Context m, MonadError CompilerError m) => [TypeParam] -> [ExtendedType] -> [Type] -> m (Map.Map SymbolName Type)
 unifyTypeVars typeParams actualTypes typeDefs = do
   let typeVarNames = Set.fromList $ map (\(TypeParam n) -> n) typeParams
@@ -483,10 +522,12 @@ typeCheckExpr expr =
       EDoubleLit _ -> return $ SimpleType TDouble
 
       EVar sym -> do
-                t <- findTypeM sym
-                case t of
-                  Just typ -> return typ
-                  Nothing -> throwError $ CannotInferType sym
+        t <- findTypeM sym
+        case t of
+          Just typ ->
+            return typ
+          Nothing -> do
+            throwError $ CannotInferType sym
 
       EPredefined sym ->
         case Map.lookup sym predefined of
@@ -602,7 +643,10 @@ typeCheckSt st =
           then return $ SimpleType TUnit
           else throwError $ InvalidReturnType sym rettype sttype
 
-      SSequence s1 s2 -> typeCheckSt s1 >> typeCheckSt s2
+      SSequence s1 s2 -> do
+         !_ <- typeCheckSt s1
+         !r <- typeCheckSt s2
+         return r
 
       SCall funNameExpr params -> do
           (!typ) <- typeCheckExpr $ EApply funNameExpr params
@@ -623,8 +667,31 @@ typeCheckSt st =
           (!condTyp) <- typeCheckExpr cond
           if condTyp `typeEq` SimpleType TBool
           then do
-            _ <- typeCheckSt tbody
-            _ <- typeCheckSt fbody
+            (!_) <- typeCheckSt tbody
+            (!_) <- typeCheckSt fbody
             return $ SimpleType TUnit
           else
             throwError $ InvalidConditionalExpressionTypeForIf condTyp
+
+      SWhile cond body -> do
+        (!condTyp) <- typeCheckExpr cond
+        if condTyp `typeEq` SimpleType TBool
+        then do
+          childContext <- cloneContext
+          (!_) <- runChildContext childContext $ typeCheckSt body
+          return $ SimpleType TUnit
+        else
+          throwError $ InvalidConditionalExpressionTypeForWhile condTyp
+
+      SUpdateVar sym expr -> do
+          (!typ) <- typeCheckExpr expr
+          existingTyp <- findTypeM sym
+          case existingTyp of
+            Just t | typ `typeEq` t ->
+              return $ SimpleType TUnit
+            Just t ->
+              throwError $ VariableUpdateTypeMismatch typ t
+            Nothing ->
+              throwError $ UndefinedSymbol sym
+
+

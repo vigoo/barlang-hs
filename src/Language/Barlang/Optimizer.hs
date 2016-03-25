@@ -106,6 +106,9 @@ optimizeStatement = \case
         else pure s
       Nothing -> pure s
 
+  SIf cond tbody fbody -> SIf cond <$> optimizeStatement tbody <*> optimizeStatement fbody
+  SWhile cond body -> SWhile cond <$> optimizeStatement body
+
   s -> pure s
 
 optimize :: Script -> Script
