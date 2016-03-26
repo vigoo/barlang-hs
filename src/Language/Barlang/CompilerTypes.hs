@@ -37,6 +37,9 @@ data CompilerError = InvalidFunctionContext
                    | InvalidConditionalExpressionTypeForWhile ExtendedType
                    | InvalidParameterTypeForPredefined SymbolName [ExtendedType]
                    | VariableUpdateTypeMismatch ExtendedType ExtendedType
+                   | InvalidArrayIndexType ExtendedType
+                   | NonArrayTypeIndexed ExtendedType
+                   | InvalidTypesInStringConcatenation [ExtendedType]
                    | GeneralError String
                      deriving (Show)
 

@@ -45,6 +45,7 @@ instance Codeable Type where
                 _ -> (square $ interleave ", " (codeList tps)) <+> body
                where body = (parenthesis $ interleave ", " (codeList types)) <++> "->" <++> rett
              TVar tp -> code tp
+             TArray t -> code "array" <+> surround "<" ">" t
 
 instance Codeable Expression where
     code = \case
@@ -55,7 +56,8 @@ instance Codeable Expression where
              EDoubleLit n -> code (show n)
              EVar sym -> code sym
              ESysVar sym -> "$"  <+> sym
-             EApply fnExpr pExprs -> parenthesis $ fnExpr <+> parenthesis (interleave ", " (codeList  pExprs))
+             EArrayAccess sym iExpr -> code sym <+> square (code iExpr)
+             EApply fnExpr pExprs -> parenthesis $ fnExpr <+> parenthesis (interleave ", " (codeList pExprs))
              ELambda tps pdefs rett body ->
                    (case tps of
                       [] -> code "fn"
@@ -69,6 +71,7 @@ instance Codeable Expression where
              EBinOp BOSub a b -> binary "-" a b
              EBinOp BOMul a b -> binary "*" a b
              EBinOp BODiv a b -> binary "/" a b
+             EBinOp BOMod a b -> binary "mod" a b
              EBinOp BOEq a b -> binary "==" a b
              EBinOp BONeq a b -> binary "!=" a b
              EBinOp BOLess a b -> binary "<" a b
@@ -85,6 +88,7 @@ instance Codeable ParamDef where
 instance Codeable Statement where
     code = \case
              SVarDecl sym expr ->  "val" <++> sym <++> "=" <++> expr <+> ";"
+             SArrayDecl sym elemType -> "array[" <++> elemType <++> "]" <++> sym <+> ";"
              SDefFun sym (FunProps{..}) tps pdefs rett body -> (prefix <++> "def" <++> symWithTps <+> parenthesis (interleave ", " (codeList pdefs)) <+> ":" <++> rett) <-> indent 4 body <-> "end;"
                where
                  prefix =
@@ -108,6 +112,7 @@ instance Codeable Statement where
                           indent 4 b <->
                           "end;"
              SUpdateVar sym expr -> sym <++> "<-" <++> expr <+> ";"
+             SUpdateCell sym iexpr expr -> sym <++> "[" <++> iexpr <++> "]" <++> "<-" <++> expr <+> ";"
              SNoOp -> noCode
 
 

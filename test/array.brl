@@ -1,0 +1,7 @@
+array[ double ] testArray;
+
+testArray [ 0 ] <- 1.0;
+testArray [ 1 ] <- 2.0;
+
+> "echo" (str(testArray [ 0 ]));
+> "echo" (str(testArray [ 1 ]));

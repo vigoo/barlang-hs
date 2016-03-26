@@ -2,4 +2,4 @@
 - Negative numbers should be parseable without parenthesis where it is not ambiguous
 - Parser does not always print errors, just stops
 - Empty lines sometimes break the parser
- 
+- Optimizer inlinedFunctionApplication interference if same variable name is used

@@ -12,7 +12,7 @@ inline def color(fg: int, bg: int): unit
 end;
 
 inline def gotoxy(x: int, y: int): unit
-    > "tput" "cup" (str(y)) (str(x));
+    > "echo" "-en" ("\\033[" + str(y) + ";" + str(x) + "H");
 end;
 
 inline def waitkey(): unit
@@ -23,18 +23,54 @@ inline def hideCursor(): unit
     > "tput" "civis";
 end;
 
+def calcSinTable(res: int, scale: double): [ double ]
+	val i = 0;
+	array[ double ] sinTable;
+	while (i < res)
+		  sinTable [ i ] <- scale * sin(((2 * pi) / res) * i);
+		  i <- i + 1;
+    end;
+
+	return sinTable;
+end;
+
+val black = 0;
+val blue = 1;
+val green = 2;
+val cyan = 3;
+val red = 4;
+val purple = 5;
+val yellow = 6;
+val white = 7;
+
+print("Precalculating....");
+val N = 1000;
+val sinTable = calcSinTable(N, 10.0);
 
 hideCursor();
 cls();
-color(6, 0);
+color(yellow, black);
 
 val t = 0;
 while (t < 100)
     val i = 0;
-    while (i < 200)
-	    val y = sin((pi / 30.0) * (i + t)) * 10.0;
-	    gotoxy(i, 10 + toInt(y));
+    while (i < 100)
+	    val idx = (25 * (i + t)) mod N;
+	    val s = sinTable [ idx ];
+		val y2 = 10 + toInt(s);
+
+        if (y2 > 10) then
+		    color(red, black);
+	    else
+		    if (y2 < 5) then
+			    color(white, black);
+		    else
+		        color(yellow, black);
+			end;
+	    end;
+		gotoxy(i, y2);
 	    print("*");
+
 	    i <- i + 1;
     end;
 	t <- t + 1;

@@ -12,6 +12,7 @@ data Type = TUnit
           | TDouble
           | TFun [TypeParam] [Type] Type
           | TVar SymbolName
+          | TArray Type
           deriving (Show, Eq)
 
 data UnaryOperator = UONot
@@ -23,6 +24,7 @@ data BinaryOperator = BOAnd
                     | BOSub
                     | BOMul
                     | BODiv
+                    | BOMod
                     | BOEq
                     | BONeq
                     | BOLess
@@ -36,6 +38,7 @@ data Expression = EStringLit String
                 | EIntLit Int
                 | EDoubleLit Double
                 | EVar SymbolName
+                | EArrayAccess SymbolName Expression
                 | ESysVar SymbolName
                 | EPredefined SymbolName
                 | EApply Expression [Expression]
@@ -61,6 +64,8 @@ data SingleStatement = SSVarDecl SymbolName Expression
                      | SSIf Expression Statement Statement
                      | SSWhile Expression Statement
                      | SSUpdateVar SymbolName Expression
+                     | SSUpdateCell SymbolName Expression Expression
+                     | SSArrayDecl SymbolName Type
                      | SSReturn Expression
                      deriving (Show, Eq)
 
@@ -74,6 +79,8 @@ data Statement = SVarDecl SymbolName Expression
                | SIf Expression Statement Statement
                | SWhile Expression Statement
                | SUpdateVar SymbolName Expression
+               | SUpdateCell SymbolName Expression Expression
+               | SArrayDecl SymbolName Type
                | SNoOp
                  deriving (Show)
 
@@ -86,6 +93,8 @@ normalize (SReturn e) = [SSReturn e]
 normalize (SIf c t f) = [SSIf c t f]
 normalize (SWhile c b) = [SSWhile c b]
 normalize (SUpdateVar s e) = [SSUpdateVar s e]
+normalize (SUpdateCell s i e) = [SSUpdateCell s i e]
+normalize (SArrayDecl s t) = [SSArrayDecl s t]
 normalize (SNoOp) = []
 normalize (SSequence s1 s2) = concatMap normalize [s1, s2]
 

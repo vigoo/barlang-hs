@@ -55,8 +55,9 @@ idStyle = emptyIdents { _styleReserved = set [ "string"
                                              , "not"
                                              , "while"
                                              , "<-"
+                                             , "array"
                                              , "==", "!=", "<", ">", "<=", ">="
-                                             , "*", "/", "-", "+"
+                                             , "*", "/", "-", "+", "mod", "<>"
                                              ]
                       }
   where
@@ -85,6 +86,13 @@ typeInt = token $ reserved "int" >> return TInt
 typeDouble :: Parser Type
 typeDouble = token $ reserved "double" >> return TDouble
 
+typeArray :: Parser Type
+typeArray = try $ do
+  token (reserved "[")
+  elemType <- typeExpr
+  token (reserved "]")
+  return $ TArray elemType
+
 typeFunArrow :: Parser ()
 typeFunArrow = token $ reserved "->"
 
@@ -107,7 +115,8 @@ typeVar :: Parser Type
 typeVar = TVar <$> identifier <?> "type variable"
 
 typeExpr :: Parser Type
-typeExpr = choice [ typeUnit
+typeExpr = choice [ typeArray
+                  , typeUnit
                   , typeString
                   , typeBool
                   , typeInt
@@ -137,6 +146,9 @@ variable = EVar <$> identifier <?> "variable identifier"
 
 systemVariable :: Parser Expression
 systemVariable = ESysVar <$> (highlight Identifier $ char '$' *> identifier) <?> "system variable"
+
+arrayAccess :: Parser Expression
+arrayAccess = try $ EArrayAccess <$> identifier <*> (token (reserved "[") *> expression False <* token (reserved "]"))
 
 funApplication :: Parser Expression
 funApplication = try $ EApply <$> variable <*> paramList
@@ -193,6 +205,7 @@ term parfun = parens (expression False)
         <|> stringLit
         <|> boolLit
         <|> numLit
+        <|> arrayAccess
         <|> (if parfun then parens funApplication else funApplication)
         <|> variable
         <|> systemVariable
@@ -210,6 +223,7 @@ exprTable = [ [Infix (pure (EBinOp BOAnd) <* token (reserved "and")) AssocLeft ]
               ]
             , [Infix (pure (EBinOp BOMul) <* token (reserved "*")) AssocLeft
               ,Infix (pure (EBinOp BODiv) <* token (reserved "/")) AssocLeft
+              ,Infix (pure (EBinOp BOMod) <* token (reserved "mod")) AssocLeft
               ]
             , [Infix (pure (EBinOp BOAdd) <* token (reserved "+")) AssocLeft
               ,Infix (pure (EBinOp BOSub) <* token (reserved "-")) AssocLeft
@@ -244,6 +258,14 @@ while :: Parser Statement
 while =     try (SWhile <$> (whileKeyword *> expression False <?> "loop condition") <*> (collapse <$> body endKeyword))
         <?> "while loop"
 
+arrayDecl :: Parser Statement
+arrayDecl = try $ do
+  token (reserved "array[")
+  elemType <- typeExpr
+  token (reserved "]")
+  name <- identifier
+  return $ SArrayDecl name elemType
+
 call :: Parser Statement
 call = try (SCall <$> ((expression True <?> "function expression") <|> (variable <?> "function name"))
                   <*> paramList
@@ -273,13 +295,15 @@ deffun = inlineKeyword >>= \inline ->
     retType = typSepSym *> typeExpr <?> "return type definition"
 
 varUpdate :: Parser Statement
-varUpdate = try $ SUpdateVar <$> identifier <*> (token (reserved "<-") *> expression False) <?> "variable update"
+varUpdate =     try (SUpdateVar <$> identifier <*> (token (reserved "<-") *> expression False) <?> "variable update")
+            <|> try (SUpdateCell <$> identifier <*> ((token (reserved "[")) *> expression False <* (token (reserved "]"))) <*> (token (reserved "<-") *> expression False))
 
 statement :: Parser Statement
 statement = choice [ ret
                    , run
                    , varUpdate
                    , val
+                   , arrayDecl
                    , ifthenelse
                    , while
                    , call

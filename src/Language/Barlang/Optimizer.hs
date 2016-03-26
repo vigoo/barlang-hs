@@ -84,7 +84,8 @@ replaceExpression from to = \case
 
 inlinedFunctionApplication :: DefinedFunction -> [Expression] -> Statement
 inlinedFunctionApplication DefinedFunction{..} paramExprs =
-  foldl (\s (ParamDef (pname, _), pexpr) -> replaceExpression (EVar pname) pexpr s) dfBody (dfParams `zip` paramExprs)
+  let result = foldl (\s (ParamDef (pname, _), pexpr) -> trace ("Replaceing expression in " <> show s <> " from " <> show (EVar pname) <> " to " <> show pexpr) $ replaceExpression (EVar pname) pexpr s) dfBody (dfParams `zip` paramExprs)
+  in trace ("Result is " <> show result) $ result
 
 optimizeStatement :: Statement -> OptimizerStateMonad Statement
 optimizeStatement = \case
