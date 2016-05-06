@@ -1,5 +1,6 @@
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE OverloadedStrings          #-}
 module Language.Barlang.Parser ( parseType
                                , parseExpr
                                , parseBarlang
@@ -29,7 +30,13 @@ import           Text.Trifecta.Result
 
 import           Language.Barlang.Language
 
-idStyle :: IdentifierStyle Parser
+newtype BarlangParser a = BarlangParser { asParser :: Parser a }
+  deriving (Functor, Applicative, Monad, Alternative, Parsing, CharParsing)
+
+instance TokenParsing BarlangParser where
+    someSpace = buildSomeSpaceParser (void space) scalaCommentStyle
+
+idStyle :: IdentifierStyle BarlangParser
 idStyle = emptyIdents { _styleReserved = set [ "string"
                                              , "bool"
                                              , "int"
@@ -63,143 +70,142 @@ idStyle = emptyIdents { _styleReserved = set [ "string"
   where
     set = HashSet.fromList
 
-identifier :: Parser String
+identifier :: BarlangParser String
 identifier = ident idStyle
 
-reserved :: String -> Parser ()
+reserved :: String -> BarlangParser ()
 reserved = reserve idStyle
 
 -- Types
 
-typeUnit :: Parser Type
+typeUnit :: BarlangParser Type
 typeUnit = token $ reserved "unit" >> return TUnit
 
-typeString :: Parser Type
+typeString :: BarlangParser Type
 typeString = token $ reserved "string" >> return TString
 
-typeBool :: Parser Type
+typeBool :: BarlangParser Type
 typeBool = token $ reserved "bool" >> return TBool
 
-typeInt :: Parser Type
+typeInt :: BarlangParser Type
 typeInt = token $ reserved "int" >> return TInt
 
-typeDouble :: Parser Type
+typeDouble :: BarlangParser Type
 typeDouble = token $ reserved "double" >> return TDouble
 
-typeArray :: Parser Type
+typeArray :: BarlangParser Type
 typeArray = try $ do
-  token (reserved "[")
-  elemType <- typeExpr
-  token (reserved "]")
+  elemType <- brackets (spaces >> typeExpr)
+  whiteSpace
   return $ TArray elemType
 
-typeFunArrow :: Parser ()
+typeFunArrow :: BarlangParser ()
 typeFunArrow = token $ reserved "->"
 
-typeFunParams :: Parser [Type]
+typeFunParams :: BarlangParser [Type]
 typeFunParams = parens $ commaSep typeExpr <?> "function parameter type list"
 
-typeParam :: Parser TypeParam
+typeParam :: BarlangParser TypeParam
 typeParam = TypeParam <$> identifier <?> "type parameter"
 
-typeParams :: Parser [TypeParam]
+typeParams :: BarlangParser [TypeParam]
 typeParams = option [] $ brackets $ commaSep typeParam <?> "type parameter list"
 
-typeFun :: Parser Type
+typeFun :: BarlangParser Type
 typeFun = TFun <$> typeParams
                <*> typeFunParams
                <*> (typeFunArrow *> typeExpr <?> "function return type")
                <?> "function type"
 
-typeVar :: Parser Type
+typeVar :: BarlangParser Type
 typeVar = TVar <$> identifier <?> "type variable"
 
-typeExpr :: Parser Type
-typeExpr = choice [ typeArray
+typeExpr :: BarlangParser Type
+typeExpr = choice [ try typeFun
+                  , typeArray
                   , typeUnit
                   , typeString
                   , typeBool
                   , typeInt
                   , typeDouble
-                  , typeFun
                   , typeVar
                   ]
              <?> "type"
 
 -- Expressions
-stringLit :: Parser Expression
+stringLit :: BarlangParser Expression
 stringLit = EStringLit <$> stringLiteral
 
-boolLit :: Parser Expression
+boolLit :: BarlangParser Expression
 boolLit = EBoolLit <$> (highlight Constant $ true <|> false) <?> "boolean literal"
   where
     true = token $ reserved "true" >> return True
     false = token $ reserved "false" >> return False
 
-numLit :: Parser Expression
+numLit :: BarlangParser Expression
 numLit = (integerOrDouble >>= \case
   Left i -> return $ EIntLit $ fromInteger i
   Right d -> return $ EDoubleLit d) <?> "numeric literal"
 
-variable :: Parser Expression
+variable :: BarlangParser Expression
 variable = EVar <$> identifier <?> "variable identifier"
 
-systemVariable :: Parser Expression
+systemVariable :: BarlangParser Expression
 systemVariable = ESysVar <$> (highlight Identifier $ char '$' *> identifier) <?> "system variable"
 
-arrayAccess :: Parser Expression
-arrayAccess = try $ EArrayAccess <$> identifier <*> (token (reserved "[") *> expression False <* token (reserved "]"))
+arrayAccess :: BarlangParser Expression
+arrayAccess = try $ EArrayAccess <$> identifier <*> brackets (expression False)
 
-funApplication :: Parser Expression
+funApplication :: BarlangParser Expression
 funApplication = try $ EApply <$> variable <*> paramList
   where
     paramList = parens $ commaSep (expression False)
 
-defKeyword :: Parser ()
+defKeyword :: BarlangParser ()
 defKeyword = token $ reserved "def"
 
-ifKeyword :: Parser ()
+ifKeyword :: BarlangParser ()
 ifKeyword = token $ reserved "if"
 
-thenKeyword :: Parser ()
+thenKeyword :: BarlangParser ()
 thenKeyword = token $ reserved "then"
 
-elseKeyword :: Parser ()
+elseKeyword :: BarlangParser ()
 elseKeyword = token $ reserved "else"
 
-whileKeyword :: Parser ()
+whileKeyword :: BarlangParser ()
 whileKeyword = token $ reserved "while"
 
-fnKeyword :: Parser ()
+fnKeyword :: BarlangParser ()
 fnKeyword = token $ reserved "fn"
 
-endKeyword :: Parser ()
+endKeyword :: BarlangParser ()
 endKeyword = token $ reserved "end"
 
-typSepSym :: Parser ()
+typSepSym :: BarlangParser ()
 typSepSym = token $ reserved ":"
 
-paramDef :: Parser ParamDef
+paramDef :: BarlangParser ParamDef
 paramDef = do name <- identifier
               typSepSym
               typ <- typeExpr
               return $ ParamDef (name, typ)
 
-paramDefs :: Parser [ParamDef]
+paramDefs :: BarlangParser [ParamDef]
 paramDefs = parens $ commaSep paramDef <?> "parameter list definition"
 
-body :: Parser () -> Parser [Statement]
+body :: BarlangParser () -> BarlangParser [Statement]
 body fin = (try fin >> return [])
          <|> do x <- statement <* semi
                 xs <- body fin
                 return (x:xs)
 
-lambda :: Parser Expression
+lambda :: BarlangParser Expression
 lambda = try $ ELambda <$> (fnKeyword *> typeParams) <*> paramDefs <*> retType <*> (collapse <$> body endKeyword <?> "lambda function body")
   where
     retType = typSepSym *> typeExpr <?> "return type definition"
 
-term :: Bool -> Parser Expression
+term :: Bool -> BarlangParser Expression
 term parfun = parens (expression False)
         <|> lambda
         <|> stringLit
@@ -210,7 +216,7 @@ term parfun = parens (expression False)
         <|> variable
         <|> systemVariable
 
-exprTable :: [[Operator Parser Expression]]
+exprTable :: [[Operator BarlangParser Expression]]
 exprTable = [ [Infix (pure (EBinOp BOAnd) <* token (reserved "and")) AssocLeft ]
             , [Infix (pure (EBinOp BOOr) <* token (reserved "or")) AssocLeft ]
             , [Prefix (pure (EUnaryOp UONot) <* token (reserved "not"))]
@@ -230,57 +236,57 @@ exprTable = [ [Infix (pure (EBinOp BOAnd) <* token (reserved "and")) AssocLeft ]
               ]
             ]
 
-expression :: Bool -> Parser Expression
+expression :: Bool -> BarlangParser Expression
 expression parfun = buildExpressionParser exprTable (term parfun) <?> "expression"
 
 -- Statements
 
-nop :: Parser Statement
+nop :: BarlangParser Statement
 nop = pure SNoOp
 
-ret :: Parser Statement
+ret :: BarlangParser Statement
 ret = SReturn <$> (returnKeyword >> expression False) <?> "return statement"
   where
     returnKeyword = token $ reserved "return"
 
-val :: Parser Statement
+val :: BarlangParser Statement
 val = SVarDecl <$> (valKeyword *> identifier <* equals) <*> expression False <?> "variable declaration"
   where
     valKeyword = token $ reserved "val"
     equals = token $ reserved "="
 
-ifthenelse :: Parser Statement
+ifthenelse :: BarlangParser Statement
 ifthenelse =     try (SIf <$> (ifKeyword *> expression False <* thenKeyword) <*> (collapse <$> body endKeyword) <*> pure SNoOp)
              <|> (SIf <$> (ifKeyword *> expression False <* thenKeyword) <*> (collapse <$> body elseKeyword) <*> (collapse <$> body endKeyword))
              <?> "conditional statement"
 
-while :: Parser Statement
+while :: BarlangParser Statement
 while =     try (SWhile <$> (whileKeyword *> expression False <?> "loop condition") <*> (collapse <$> body endKeyword))
         <?> "while loop"
 
-arrayDecl :: Parser Statement
+arrayDecl :: BarlangParser Statement
 arrayDecl = try $ do
-  token (reserved "array[")
-  elemType <- typeExpr
-  token (reserved "]")
+  _ <- text "array"
+  elemType <- brackets (spaces >> typeExpr)
+  whiteSpace
   name <- identifier
   return $ SArrayDecl name elemType
 
-call :: Parser Statement
+call :: BarlangParser Statement
 call = try (SCall <$> ((expression True <?> "function expression") <|> (variable <?> "function name"))
                   <*> paramList
            ) <?> "function call"
   where
     paramList = parens (commaSep (expression False)) <?> "function call's parameter list"
 
-run :: Parser Statement
+run :: BarlangParser Statement
 run = (token $ reserved ">") >> (SRun <$> (expression True <?> "program name")
                                       <*> runParams <?> "program parameter list"
                                 ) <?> "run statement"
   where
     runParams = many $ expression True
 
-deffun :: Parser Statement
+deffun :: BarlangParser Statement
 deffun = inlineKeyword >>= \inline ->
   (SDefFun <$> (defKeyword *> identifier <?> "function name")
            <*> pure (defaultFunProps { fpInline = inline })
@@ -294,11 +300,11 @@ deffun = inlineKeyword >>= \inline ->
     inlineKeyword = liftM (fromMaybe False) $ (optional ((token $ reserved "inline") >> return True)) <?> "inline keyword"
     retType = typSepSym *> typeExpr <?> "return type definition"
 
-varUpdate :: Parser Statement
+varUpdate :: BarlangParser Statement
 varUpdate =     try (SUpdateVar <$> identifier <*> (token (reserved "<-") *> expression False) <?> "variable update")
-            <|> try (SUpdateCell <$> identifier <*> ((token (reserved "[")) *> expression False <* (token (reserved "]"))) <*> (token (reserved "<-") *> expression False))
+            <|> try (SUpdateCell <$> identifier <*> brackets (spaces >> expression False) <*> (token (reserved "<-") *> expression False))
 
-statement :: Parser Statement
+statement :: BarlangParser Statement
 statement = choice [ ret
                    , run
                    , varUpdate
@@ -317,17 +323,17 @@ collapse [] = SNoOp
 collapse [s] = s
 collapse (x:xs) = SSequence x (collapse xs)
 
-statements :: Parser Statement
+statements :: BarlangParser Statement
 statements = collapse <$> statement `endBy` semi <?> "statements"
 
-script :: Parser Script
-script = (Script <$> statements <* eof) <?> "barlang script"
+script :: BarlangParser Script
+script = Script <$> (whiteSpace *> statements <* eof) <?> "barlang script"
 
 showParseError :: (MonadIO m) => Pretty.Doc -> m ()
 showParseError xs = liftIO $ Pretty.displayIO stdout $ Pretty.renderPretty 0.8 80 $ xs <> Pretty.linebreak
 
-parse :: Parser a -> String -> Result a
-parse p = parseString p (Columns 0 0)
+parse :: BarlangParser a -> String -> Result a
+parse (BarlangParser p) = parseString p (Columns 0 0)
 
 parseType :: String -> Result Type
 parseType = parse typeExpr
@@ -339,4 +345,5 @@ parseBarlang :: String -> Result Script
 parseBarlang = parse script
 
 parseBarlangFile :: FilePath -> IO (Result Script)
-parseBarlangFile = parseFromFileEx script
+parseBarlangFile = parseFromFileEx (asParser script)
+

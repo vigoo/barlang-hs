@@ -1,3 +1,5 @@
+
+// A simple wrapper for 'echo'
 def print(s: string): unit
 	> "echo" s;
 end;
@@ -39,6 +41,6 @@ generic_print(b);
 
 generic_print(20 + 30 + i);
 generic_print(d * i);
-generic_print(b or (5 > 4));
+generic_print(b or (5 > 4)); /* printing a logical value */
 
 print("END");

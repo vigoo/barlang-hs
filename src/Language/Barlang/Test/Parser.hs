@@ -42,6 +42,7 @@ instance Arbitrary Type where
                        , pure TInt
                        , pure TDouble
                        , TVar <$> arbitrarySymbolName
+                       , TArray <$> arbitrary
                        , do k <- choose (0, n-1)
                             l <- choose (0, n-1)
                             m <- choose (0, n-1)
@@ -74,6 +75,8 @@ instance Arbitrary Expression where
                         , EDoubleLit <$> arbitrary
                         , EVar <$> arbitrarySymbolName
                         , ESysVar <$> arbitrarySymbolName
+                        , EArrayAccess <$> arbitrarySymbolName <*> arbitrary
+                        , ELambda <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
                         , do k <- choose (0, n-1)
                              l <- choose (0, n-1)
                              args <- replicateM k $ arbExpr l
@@ -142,6 +145,9 @@ instance Arbitrary Statement where
                     , SReturn <$> arbitrary
                     , SIf <$> arbitrary <*> arbitrary <*> arbitrary
                     , SWhile <$> arbitrary <*> arbitrary
+                    , SUpdateVar <$> arbitrarySymbolName <*> arbitrary
+                    , SUpdateCell <$> arbitrarySymbolName <*> arbitrary <*> arbitrary
+                    , SArrayDecl <$> arbitrarySymbolName <*> arbitrary
                     , pure SNoOp
                     ]
 

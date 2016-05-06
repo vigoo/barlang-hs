@@ -23,11 +23,11 @@ inline def hideCursor(): unit
     > "tput" "civis";
 end;
 
-def calcSinTable(res: int, scale: double): [ double ]
+def calcSinTable(res: int, scale: double): [double]
 	val i = 0;
-	array[ double ] sinTable;
+	array[double] sinTable;
 	while (i < res)
-		  sinTable [ i ] <- scale * sin(((2 * pi) / res) * i);
+		  sinTable[i] <- scale * sin(((2 * pi) / res) * i);
 		  i <- i + 1;
     end;
 
@@ -56,7 +56,7 @@ while (t < 100)
     val i = 0;
     while (i < 100)
 	    val idx = (25 * (i + t)) mod N;
-	    val s = sinTable [ idx ];
+	    val s = sinTable[idx];
 		val y2 = 10 + toInt(s);
 
         if (y2 > 10) then

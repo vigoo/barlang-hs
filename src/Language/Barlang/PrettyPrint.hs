@@ -45,7 +45,7 @@ instance Codeable Type where
                 _ -> (square $ interleave ", " (codeList tps)) <+> body
                where body = (parenthesis $ interleave ", " (codeList types)) <++> "->" <++> rett
              TVar tp -> code tp
-             TArray t -> code "array" <+> surround "<" ">" t
+             TArray t -> square t
 
 instance Codeable Expression where
     code = \case
@@ -112,7 +112,7 @@ instance Codeable Statement where
                           indent 4 b <->
                           "end;"
              SUpdateVar sym expr -> sym <++> "<-" <++> expr <+> ";"
-             SUpdateCell sym iexpr expr -> sym <++> "[" <++> iexpr <++> "]" <++> "<-" <++> expr <+> ";"
+             SUpdateCell sym iexpr expr -> sym <+> "[" <+> iexpr <+> "]" <++> "<-" <++> expr <+> ";"
              SNoOp -> noCode
 
 
