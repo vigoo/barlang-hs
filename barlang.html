@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script language="javascript" src="all.js"></script>
+    <script language="javascript" src="runmain.js"></script>
+    <script src="ace/ace.js" type="text/javascript" charset="utf-8"></script>
+
+    <style type="text/css" media="screen">
+        #barlangSource {
+            position: fixed;
+            float: left;
+            left: 0;
+            width: 50%;
+            top: 0;
+            height: 100%;
+            overflow: hidden;
+        }
+        #bashSource {
+            float: left;
+            position: fixed;
+            left: 50%;
+            width: 50%;
+            top: 0;
+            height: 100%;
+            overflow: hidden;
+        }
+    </style>    
+  </head>
+  <body>
+    <div id="barlangSource"></div>
+    <div id="bashSource"></div>
+      
+    <script>
+        var barlangEditor = ace.edit("barlangSource");
+        barlangEditor.setTheme("ace/theme/monokai");
+        barlangEditor.getSession().setMode("ace/mode/plain_text");
+        barlangEditor.getSession().on('change', function(e) {
+            window.compileBarlang(barlangEditor.getValue(), 
+            function(bash) {
+               bashEditor.setValue(bash);
+            });
+        });
+        barlangEditor.resize();
+        
+        var bashEditor = ace.edit("bashSource");
+        bashEditor.setReadOnly(true);
+        bashEditor.setTheme("ace/theme/monokai");
+        bashEditor.getSession().setMode("ace/mode/sh");
+        bashEditor.resize();                     
+    </script>
+  </body>  
+</html>
