@@ -3,6 +3,8 @@
   <head>
     <script language="javascript" src="all.js"></script>
     <script language="javascript" src="runmain.js"></script>
+    <script language="javascript" src="ansi_up.js"></script>
+    <script language="javascript" src="jquery-2.2.4.min.js"></script>
     <script src="ace/ace.js" type="text/javascript" charset="utf-8"></script>
 
     <style type="text/css" media="screen">
@@ -12,7 +14,7 @@
             left: 0;
             width: 50%;
             top: 0;
-            height: 100%;
+            height: 90%;
             overflow: hidden;
         }
         #bashSource {
@@ -21,24 +23,47 @@
             left: 50%;
             width: 50%;
             top: 0;
-            height: 100%;
+            height: 90%;
             overflow: hidden;
+        }
+        #errors {
+            position: fixed;
+            left: 0;
+            width: 100%;
+            top: 90%;
+            height: 10%;
+            overflow: hidden;
+            background-color: black;
+            color: white;
+            font-family: Courier New, Courier, monospace;
+            font-size: smaller;
         }
     </style>    
   </head>
   <body>
     <div id="barlangSource"></div>
     <div id="bashSource"></div>
+    <div id="errors"></div>
       
     <script>
         var barlangEditor = ace.edit("barlangSource");
         barlangEditor.setTheme("ace/theme/monokai");
         barlangEditor.getSession().setMode("ace/mode/plain_text");
         barlangEditor.getSession().on('change', function(e) {
-            window.compileBarlang(barlangEditor.getValue(), 
-            function(bash) {
-               bashEditor.setValue(bash);
-            });
+            try {
+                window.compileBarlang(
+                    barlangEditor.getValue(), 
+                    function(bash) {
+                        $("#errors").html("Compiled");
+                        bashEditor.setValue(bash);
+                    },
+                    function(error) {
+                        $("#errors").html(ansi_up.ansi_to_html(error));
+                    });
+            }
+            catch(error) {
+                $("#errors").html(ansi_up.ansi_to_html(error));
+            }
         });
         barlangEditor.resize();
         
