@@ -21,6 +21,7 @@ library
   exposed-modules:     Language.Barlang.Compiler
                      , Language.Barlang.CompilerTypes
                      , Language.Barlang.Language
+                     , Language.Barlang.Optimizer
                      , Language.Barlang.Parser
                      , Language.Barlang.PrettyPrint
                      , Language.Barlang.Predefined
@@ -104,3 +105,14 @@ test-suite barlang-test
   hs-source-dirs:      src
   default-language:    Haskell2010
   ghc-options:       -Wall
+
+executable barlang-webapp
+  hs-source-dirs:      webapp
+  main-is:             Main.hs
+  ghc-options:         -Wall
+  build-depends:       base
+                     , ghcjs-base
+                     , ghcjs-prim
+                     , trifecta
+                     , barlang
+  default-language:    Haskell2010

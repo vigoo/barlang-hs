@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script language="javascript" src="all.js"></script>
+    <script language="javascript" src="runmain.js"></script>
+    <script language="javascript" src="ansi_up.js"></script>
+    <script language="javascript" src="jquery.min.js"></script>
+    <script language="javascript" src="ace/ace.js"></script>
+    
+    <link rel="stylesheet" type="text/css" href="barlang.css">
+  </head>
+  <body>
+    <div id="barlangSource"></div>
+    <div id="bashSource"></div>
+    <div id="errors"></div>
+    <div id="cheatsheet">
+        <h1>Types</h1>
+        <ul>
+            <li><span class="code">unit</span></li>
+            <li><span class="code">string</span></li>
+            <li><span class="code">bool</span></li>
+            <li><span class="code">int</span></li>
+            <li><span class="code">double</span></li>
+            <li><span class="code">(T1, ..., Tn) -> Tr</span></li>
+            <li><span class="code">[TP1, ... TPn](T1, ..., Tn) -> Tr</span></li>
+            <li><span class="code">[T]</span></li>
+            <li><span class="code">unit</span></li>
+        </ul>
+        <h1>Expressions</h1>
+        <ul>
+            <li><span class="code">"str", true, false, 10, 3.14</span></li>
+            <li><span class="code">variableName, $ENVVAR</span></li>
+            <li><span class="code">arrayVar[index]</span></li>
+            <li><span class="code">funName(p1, ..., pn)</span></li>
+            <li><span class="code">not b, a or b, a and b</span></li>
+            <li><span class="code">x + y, x - y, x * y, x / y, x mod y</span></li>
+            <li><span class="code">a == b, a != b, x < y, x <= y, x > y, x >= y</span></li>
+        </ul>
+        <h1>Predefined</h1>
+        <ul>
+            <li><span class="code">str[T](v: T): string</span></li>
+            <li><span class="code">toInt(v: double): int</span></li>
+            <li><span class="code">sin(x: double): double</span></li>
+            <li><span class="code">cos(x: double): double</span></li>
+            <li><span class="code">pi: double</span></li>
+        </ul>
+        <h1>Statements</h1>
+        <ul>
+            <li><span class="code">val x = 0.5;</span></li>
+            <li><span class="code">array[int] nums;</span></li>
+            <li><span class="code">def square(x: double): double ... end;</span></li>
+            <li><span class="code">function(arg1, ... argn);</span></li>
+            <li><span class="code">&gt; "echo" "something";</span></li>
+            <li><span class="code">return x;</span></li>
+            <li><span class="code">if b then ... else ... end;</span></li>
+            <li><span class="code">while b ... end;</span></li>
+            <li><span class="code">x <- x + 1;</span></li>
+            <li><span class="code">nums[1] <- 100;</span></li>
+        </ul>
+    </div>
+      
+    <script language="javascript" src="barlang.js"></script>
+  </body>  
+</html>

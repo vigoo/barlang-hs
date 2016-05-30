@@ -57,16 +57,19 @@ run Parameters{..} = do
      if pPPrintOnly
      then putStrLn $ pprint optimized
      else do
-        let bash = compileToString optimized
+        let bashResult = compileToString optimized
 
-        when pDumpAST $ print optimized
+        case bashResult of
+            Left err -> error $ show err
+            Right bash -> do
+                when pDumpAST $ print optimized
 
-        case pTarget of
-         Nothing -> putStrLn bash
-         Just path -> do
-           writeFile path bash
-           p <- getPermissions path
-           setPermissions path p { executable = True }
+                case pTarget of
+                    Nothing -> putStrLn bash
+                    Just path -> do
+                        writeFile path bash
+                        p <- getPermissions path
+                        setPermissions path p { executable = True }
 
 main :: IO ()
 main = withParameters run

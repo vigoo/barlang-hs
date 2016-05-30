@@ -1,0 +1,33 @@
+
+# Specifies the GHC version and set of packages available (e.g., lts-3.5, nightly-2015-09-21, ghc-7.10.2)
+resolver: lts-3.8
+
+# Local packages, usually specified by relative directory name
+packages:
+  - '..'
+  - location:
+      git: https://github.com/solidsnack/bash.git
+      commit: 512cacb051d7e7c72192462fd19dada8342204e2
+    subdirs:
+      - hs
+    extra-dep: true
+  - location:
+      git: https://github.com/solidsnack/shell-escape.git
+      commit: 056c7b308be32ffeafec815907699f6c27536b1e
+    extra-dep: true
+
+extra-deps:
+  - bash-0.1
+  - shell-escape-0.2
+flags: {}
+
+extra-package-dbs: []
+
+compiler: ghcjs-0.2.0.20160414_ghc-7.10.3
+compiler-check: match-exact
+setup-info:
+  ghcjs:
+    source:
+      ghcjs-0.2.0.20160414_ghc-7.10.3:
+        url: https://s3.amazonaws.com/ghcjs/ghcjs-0.2.0.20160414_ghc-7.10.3.tar.gz
+        sha1: 6d6f307503be9e94e0c96ef1308c7cf224d06be3

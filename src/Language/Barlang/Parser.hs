@@ -6,6 +6,7 @@ module Language.Barlang.Parser ( parseType
                                , parseBarlang
                                , parseBarlangFile
                                , showParseError
+                               , parseErrorAsString
                                )
        where
 
@@ -331,6 +332,9 @@ script = Script <$> (whiteSpace *> statements <* eof) <?> "barlang script"
 
 showParseError :: (MonadIO m) => Pretty.Doc -> m ()
 showParseError xs = liftIO $ Pretty.displayIO stdout $ Pretty.renderPretty 0.8 80 $ xs <> Pretty.linebreak
+
+parseErrorAsString :: Pretty.Doc -> String
+parseErrorAsString xs = Pretty.displayS (Pretty.renderPretty 0.8 80 $ xs <> Pretty.linebreak) ""
 
 parse :: BarlangParser a -> String -> Result a
 parse (BarlangParser p) = parseString p (Columns 0 0)

@@ -1,0 +1,53 @@
+#barlangSource {
+    position: fixed;
+    float: left;
+    left: 0;
+    width: 40%;
+    top: 0;
+    height: 90%;
+    overflow: hidden;
+}
+#bashSource {
+    float: left;
+    position: fixed;
+    left: 40%;
+    width: 40%;
+    top: 0;
+    height: 90%;
+    overflow: hidden;
+}
+#errors {
+    position: fixed;
+    left: 0;
+    width: 80%;
+    top: 90%;
+    height: 10%;
+    overflow: hidden;
+    background-color: black;
+    color: white;
+    font-family: Courier New, Courier, monospace;
+    font-size: smaller;
+}
+#cheatsheet {
+    position: fixed;
+    left: 80%;
+    width: 20%;
+    top: 0;
+    height: 100%;
+    background-color: lightyellow;
+    color: black;
+    font-size: x-small;    
+}
+#cheatsheet h1 {
+    font-family: Verdana, Geneva, Tahoma, sans-serif;
+    font-weight: bold;
+    font-size: small;
+    margin-left: 4px;
+}
+#cheatsheet ul {
+    list-style-type: none;
+}
+.code {
+    font-family: Courier New, Courier, monospace;
+    font-size: x-small;
+}

@@ -90,11 +90,11 @@ toBash st = mconcat [ fromByteString "#!/bin/bash\n"
                     , fromByteString "\n\n"
                     , SHPP.builder st ]
 
-compileToString :: Script -> String
+compileToString :: Script -> Either CompilerError String
 compileToString script =
     case evalState (runExceptT $ compile script) initialContext of
-      Right st -> BL.toString $ toLazyByteString $ toBash st
-      Left err -> error (show err)
+      Right st -> Right $ BL.toString $ toLazyByteString $ toBash st
+      Left err -> Left err
 
 compile :: Script -> CompilerMonad BashStatement
 compile Script{..} = do  let replacedSt = replacePredefs sStatement
@@ -196,6 +196,8 @@ compileTestExpr = \case
             throwError $ CannotInferType sym
        Nothing ->
          throwError $ UndefinedSymbol sym
+    EStringLit str ->
+        return $ "\"" <> B.fromString str <> "\""
     EBinOp BOAnd a b -> binaryTestExpr a b "-a"
     EBinOp BOOr a b -> binaryTestExpr a b "-o"
     EUnaryOp UONot e -> do
