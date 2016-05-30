@@ -4,64 +4,10 @@
     <script language="javascript" src="all.js"></script>
     <script language="javascript" src="runmain.js"></script>
     <script language="javascript" src="ansi_up.js"></script>
-    <script language="javascript" src="jquery-2.2.4.min.js"></script>
-    <script src="ace/ace.js" type="text/javascript" charset="utf-8"></script>
-
-    <style type="text/css" media="screen">
-        #barlangSource {
-            position: fixed;
-            float: left;
-            left: 0;
-            width: 40%;
-            top: 0;
-            height: 90%;
-            overflow: hidden;
-        }
-        #bashSource {
-            float: left;
-            position: fixed;
-            left: 40%;
-            width: 40%;
-            top: 0;
-            height: 90%;
-            overflow: hidden;
-        }
-        #errors {
-            position: fixed;
-            left: 0;
-            width: 80%;
-            top: 90%;
-            height: 10%;
-            overflow: hidden;
-            background-color: black;
-            color: white;
-            font-family: Courier New, Courier, monospace;
-            font-size: smaller;
-        }
-        #cheatsheet {
-            position: fixed;
-            left: 80%;
-            width: 20%;
-            top: 0;
-            height: 100%;
-            background-color: lightyellow;
-            color: black;
-            font-size: x-small;    
-        }
-        #cheatsheet h1 {
-            font-family: Verdana, Geneva, Tahoma, sans-serif;
-            font-weight: bold;
-            font-size: small;
-            margin-left: 4px;
-        }
-        #cheatsheet ul {
-            list-style-type: none;
-        }
-        .code {
-            font-family: Courier New, Courier, monospace;
-            font-size: x-small;
-        }
-    </style>    
+    <script language="javascript" src="jquery.min.js"></script>
+    <script language="javascript" src="ace/ace.js"></script>
+    
+    <link rel="stylesheet" type="text/css" href="barlang.css">
   </head>
   <body>
     <div id="barlangSource"></div>
@@ -113,33 +59,6 @@
         </ul>
     </div>
       
-    <script>
-        var barlangEditor = ace.edit("barlangSource");
-        barlangEditor.setTheme("ace/theme/monokai");
-        barlangEditor.getSession().setMode("ace/mode/plain_text");
-        barlangEditor.getSession().on('change', function(e) {
-            try {
-                window.compileBarlang(
-                    barlangEditor.getValue(), 
-                    function(bash) {
-                        $("#errors").html("Compiled");
-                        bashEditor.setValue(bash);
-                    },
-                    function(error) {
-                        $("#errors").html(ansi_up.ansi_to_html(error));
-                    });
-            }
-            catch(error) {
-                $("#errors").html(ansi_up.ansi_to_html(error));
-            }
-        });
-        barlangEditor.resize();
-        
-        var bashEditor = ace.edit("bashSource");
-        bashEditor.setReadOnly(true);
-        bashEditor.setTheme("ace/theme/monokai");
-        bashEditor.getSession().setMode("ace/mode/sh");
-        bashEditor.resize();
-    </script>
+    <script language="javascript" src="barlang.js"></script>
   </body>  
 </html>
